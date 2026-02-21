@@ -1,0 +1,29 @@
+# Виртуальное окружение
+venv/
+env/
+.env
+*.pyc
+__pycache__/
+
+# Базы данных
+*.db
+*.sqlite
+data/*.db
+
+# Логи
+*.log
+logs/
+
+# Файлы IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+
+# Конфиги с токенами
+.env
+.env.local

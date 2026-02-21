@@ -1,29 +1,65 @@
-# Виртуальное окружение
+# =========================
+# Python
+# =========================
+__pycache__/
+*.py[cod]
+*$py.class
+
+# C extensions
+*.so
+
+# =========================
+# Virtual environments
+# =========================
+.venv/
 venv/
 env/
-.env
-*.pyc
-__pycache__/
+ENV/
 
-# Базы данных
-*.db
-*.sqlite
-data/*.db
-
-# Логи
+# =========================
+# Logs
+# =========================
 *.log
 logs/
+bot.log
+bot.log.*
 
-# Файлы IDE
-.vscode/
-.idea/
-*.swp
-*.swo
+# =========================
+# Databases / local runtime data
+# =========================
+*.db
+*.sqlite
+*.sqlite3
 
-# Системные файлы
+# =========================
+# Environment / secrets
+# =========================
+.env
+.env.*
+!.env.example
+
+# =========================
+# OS / Editor junk
+# =========================
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Конфиги с токенами
-.env
-.env.local
+.vscode/
+.idea/
+
+# =========================
+# Build / temp
+# =========================
+tmp/
+temp/
+*.tmp
+*.bak
+
+# =========================
+# Archives (optional)
+# Чтобы не коммитить архивы, которые ты собираешь для отправки
+# =========================
+*.zip
+*.rar
+*.7z

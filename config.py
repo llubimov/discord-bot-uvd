@@ -1,6 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-
 import os
 import logging
 from dotenv import load_dotenv
@@ -8,12 +5,195 @@ from dotenv import load_dotenv
 load_dotenv()
 
 
+def _env_int(name: str, default: int = 0) -> int:
+    """Безопасно читает int из .env"""
+    raw = str(os.getenv(name, "")).strip()
+    if not raw:
+        return default
+    try:
+        return int(raw)
+    except ValueError:
+        return default
+
+
+def _parse_int_list(raw: str) -> list[int]:
+    """Парсит список ID из строки вида 1,2,3"""
+    result: list[int] = []
+    if not raw:
+        return result
+
+    for part in str(raw).split(","):
+        part = part.strip()
+        if not part:
+            continue
+        try:
+            result.append(int(part))
+        except ValueError:
+            continue
+
+    return result
+
+
+def _parse_prefixed_int_list(prefix: str) -> list[int]:
+    """
+    Читает переменные окружения вида PREFIX_01=123, PREFIX_02=456...
+    Возвращает список ID, отсортированный по имени переменной.
+    """
+    pairs: list[tuple[str, int]] = []
+
+    for key, value in os.environ.items():
+        if not key.startswith(prefix):
+            continue
+
+        try:
+            pairs.append((key, int(str(value).strip())))
+        except ValueError:
+            continue
+
+    pairs.sort(key=lambda x: x[0])
+    return [value for _, value in pairs]
+
+
+def _get_list_from_env(prefix: str, legacy_var: str) -> list[int]:
+    """
+    Сначала пробует новый формат PREFIX_01, PREFIX_02...
+    Если не найдено — берёт старый CSV-формат из legacy_var.
+    """
+    prefixed = _parse_prefixed_int_list(prefix)
+    if prefixed:
+        return prefixed
+
+    return _parse_int_list(os.getenv(legacy_var, ""))
+
+
+def _parse_promotion_channels_legacy(raw: str) -> dict[int, int]:
+    """
+    Старый формат:
+    PROMOTION_CHANNELS=channel_id:staff_role_id,channel_id:staff_role_id
+    """
+    result: dict[int, int] = {}
+    if not raw:
+        return result
+
+    for part in str(raw).split(","):
+        part = part.strip()
+        if not part or ":" not in part:
+            continue
+
+        channel_id_str, role_id_str = part.split(":", 1)
+        try:
+            result[int(channel_id_str.strip())] = int(role_id_str.strip())
+        except ValueError:
+            continue
+
+    return result
+
+
+def _parse_prefixed_channel_role_map(prefix: str) -> dict[int, int]:
+    """
+    Новый формат:
+    PROMOTION_CH_01=channel_id:role_id
+    PROMOTION_CH_02=channel_id:role_id
+    """
+    result: dict[int, int] = {}
+
+    for key, value in os.environ.items():
+        if not key.startswith(prefix):
+            continue
+
+        raw = str(value).strip()
+        if ":" not in raw:
+            continue
+
+        channel_id_str, role_id_str = raw.split(":", 1)
+        try:
+            result[int(channel_id_str.strip())] = int(role_id_str.strip())
+        except ValueError:
+            continue
+
+    return result
+
+
+def _parse_rank_role_mapping_legacy(raw: str) -> dict[str, int]:
+    """
+    Старый формат:
+    RANK_ROLE_MAPPING=Текст повышения:ID,Текст повышения:ID
+    """
+    result: dict[str, int] = {}
+    if not raw:
+        return result
+
+    for part in str(raw).split(","):
+        part = part.strip()
+        if not part or ":" not in part:
+            continue
+
+        key, value = part.rsplit(":", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key or not value:
+            continue
+
+        try:
+            role_id = int(value)
+        except ValueError:
+            continue
+
+        result[key] = role_id
+
+        # Автоматически добавляем вариант со второй стрелкой
+        if "->" in key:
+            result[key.replace("->", "→")] = role_id
+        if "→" in key:
+            result[key.replace("→", "->")] = role_id
+
+    return result
+
+
+def _parse_prefixed_rank_role_mapping(prefix: str) -> dict[str, int]:
+    """
+    Новый формат:
+    RANKMAP_01=Текст повышения:ID
+    RANKMAP_02=Текст повышения:ID
+    """
+    result: dict[str, int] = {}
+
+    for key, value in sorted(os.environ.items()):
+        if not key.startswith(prefix):
+            continue
+
+        raw = str(value).strip()
+        if ":" not in raw:
+            continue
+
+        title, role_id_str = raw.rsplit(":", 1)
+        title = title.strip()
+        role_id_str = role_id_str.strip()
+        if not title or not role_id_str:
+            continue
+
+        try:
+            role_id = int(role_id_str)
+        except ValueError:
+            continue
+
+        result[title] = role_id
+
+        # Автоматически добавляем вариант со второй стрелкой
+        if "->" in title:
+            result[title.replace("->", "→")] = role_id
+        if "→" in title:
+            result[title.replace("→", "->")] = role_id
+
+    return result
+
+
 class Config:
     TOKEN = os.getenv("DISCORD_BOT_TOKEN")
     if not TOKEN:
         raise ValueError("❌ Токен не найден! Создайте файл .env с DISCORD_BOT_TOKEN=ваш_токен")
 
-    GUILD_ID = int(os.getenv("GUILD_ID", 0))
+    GUILD_ID = _env_int("GUILD_ID", 0)
     COMMAND_PREFIX = "!"
     LOG_FILE = "bot.log"
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -24,51 +204,54 @@ class Config:
     DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
 
     # Роли staff
-    STAFF_ROLE_ID = int(os.getenv("STAFF_ROLE_ID", 0))
-    TRANSFER_STAFF_ROLE_ID = int(os.getenv("TRANSFER_STAFF_ROLE_ID", 0))
-    GOV_STAFF_ROLE_ID = int(os.getenv("GOV_STAFF_ROLE_ID", 0))
-    FIRING_STAFF_ROLE_ID = int(os.getenv("FIRING_STAFF_ROLE_ID", 0))
-    WAREHOUSE_STAFF_ROLE_ID = int(os.getenv("WAREHOUSE_STAFF_ROLE_ID", 0))
+    STAFF_ROLE_ID = _env_int("STAFF_ROLE_ID", 0)
+    TRANSFER_STAFF_ROLE_ID = _env_int("TRANSFER_STAFF_ROLE_ID", 0)
+    GOV_STAFF_ROLE_ID = _env_int("GOV_STAFF_ROLE_ID", 0)
+    FIRING_STAFF_ROLE_ID = _env_int("FIRING_STAFF_ROLE_ID", 0)
+    WAREHOUSE_STAFF_ROLE_ID = _env_int("WAREHOUSE_STAFF_ROLE_ID", 0)
 
-    # Роли выдачи
-    CADET_ROLES_TO_GIVE = [int(x) for x in os.getenv("CADET_ROLES_TO_GIVE", "").split(",") if x]
-    TRANSFER_ROLES_TO_GIVE = [int(x) for x in os.getenv("TRANSFER_ROLES_TO_GIVE", "").split(",") if x]
-    GOV_ROLE_TO_GIVE = int(os.getenv("GOV_ROLE_TO_GIVE", 0))
+    # Роли выдачи (новый формат в .env: *_ROLE_01, *_ROLE_02...; старый CSV тоже поддерживается)
+    CADET_ROLES_TO_GIVE = _get_list_from_env("CADET_ROLE_", "CADET_ROLES_TO_GIVE")
+    TRANSFER_ROLES_TO_GIVE = _get_list_from_env("TRANSFER_ROLE_", "TRANSFER_ROLES_TO_GIVE")
+    GOV_ROLE_TO_GIVE = _env_int("GOV_ROLE_TO_GIVE", 0)
 
     # Роли увольнения
-    FIRED_ROLE_ID = int(os.getenv("FIRED_ROLE_ID", 0))
-    ROLES_TO_KEEP_ON_FIRE = [int(x) for x in os.getenv("ROLES_TO_KEEP_ON_FIRE", "").split(",") if x]
+    FIRED_ROLE_ID = _env_int("FIRED_ROLE_ID", 0)
+    ROLES_TO_KEEP_ON_FIRE = _get_list_from_env("KEEP_ON_FIRE_ROLE_", "ROLES_TO_KEEP_ON_FIRE")
 
     # Роли званий
-    ALL_RANK_ROLE_IDS = [int(x) for x in os.getenv("ALL_RANK_ROLE_IDS", "").split(",") if x]
+    ALL_RANK_ROLE_IDS = _get_list_from_env("ALL_RANK_ROLE_", "ALL_RANK_ROLE_IDS")
     ROLES_TO_KEEP_ON_PROMOTION = ROLES_TO_KEEP_ON_FIRE
 
     # Роли ППС
-    PPS_ROLE_IDS = [int(x) for x in os.getenv("PPS_ROLE_IDS", "").split(",") if x]
+    PPS_ROLE_IDS = _get_list_from_env("PPS_ROLE_", "PPS_ROLE_IDS")
     DEPARTMENT_ROLES_PPS = PPS_ROLE_IDS
 
     # Каналы
-    REQUEST_CHANNEL_ID = int(os.getenv("REQUEST_CHANNEL_ID", 0))
-    START_CHANNEL_ID = int(os.getenv("START_CHANNEL_ID", 0))
-    FIRING_CHANNEL_ID = int(os.getenv("FIRING_CHANNEL_ID", 0))
-    WAREHOUSE_REQUEST_CHANNEL_ID = int(os.getenv("WAREHOUSE_REQUEST_CHANNEL_ID", 0))
-    WAREHOUSE_AUDIT_CHANNEL_ID = int(os.getenv("WAREHOUSE_AUDIT_CHANNEL_ID", 0))
-    ACADEMY_CHANNEL_ID = int(os.getenv("ACADEMY_CHANNEL_ID", 0))
-    EXAM_CHANNEL_ID = int(os.getenv("EXAM_CHANNEL_ID", 0))
+    REQUEST_CHANNEL_ID = _env_int("REQUEST_CHANNEL_ID", 0)
+    START_CHANNEL_ID = _env_int("START_CHANNEL_ID", 0)
+    FIRING_CHANNEL_ID = _env_int("FIRING_CHANNEL_ID", 0)
+    WAREHOUSE_REQUEST_CHANNEL_ID = _env_int("WAREHOUSE_REQUEST_CHANNEL_ID", 0)
+    WAREHOUSE_AUDIT_CHANNEL_ID = _env_int("WAREHOUSE_AUDIT_CHANNEL_ID", 0)
+    ACADEMY_CHANNEL_ID = _env_int("ACADEMY_CHANNEL_ID", 0)
+    EXAM_CHANNEL_ID = _env_int("EXAM_CHANNEL_ID", 0)
 
-    PROMOTION_CHANNELS_RAW = os.getenv("PROMOTION_CHANNELS", "").split(",")
-    PROMOTION_CHANNELS = {}
-    for item in PROMOTION_CHANNELS_RAW:
-        if ":" in item:
-            channel, role = item.split(":")
-            PROMOTION_CHANNELS[int(channel)] = int(role)
+    # Каналы повышений (новый формат: PROMOTION_CH_01=channel_id:role_id; старый PROMOTION_CHANNELS тоже поддерживается)
+    PROMOTION_CHANNELS = _parse_prefixed_channel_role_map("PROMOTION_CH_")
+    if not PROMOTION_CHANNELS:
+        PROMOTION_CHANNELS = _parse_promotion_channels_legacy(os.getenv("PROMOTION_CHANNELS", ""))
+    if not PROMOTION_CHANNELS:
+        raise ValueError(
+            "PROMOTION_CHANNELS / PROMOTION_CH_* не заданы в .env. "
+            "Укажите каналы повышений и роль для их обработки."
+        )
 
     # Время
-    REQUEST_COOLDOWN = int(os.getenv("REQUEST_COOLDOWN", 60))
-    REQUEST_EXPIRY_DAYS = int(os.getenv("REQUEST_EXPIRY_DAYS", 7))
-    START_MESSAGE_CHECK_INTERVAL = int(os.getenv("START_MESSAGE_CHECK_INTERVAL", 60))
-    WAREHOUSE_COOLDOWN_HOURS = int(os.getenv("WAREHOUSE_COOLDOWN_HOURS", 6))
-    EXAM_BUTTON_TIMEOUT = int(os.getenv("EXAM_BUTTON_TIMEOUT", 120))
+    REQUEST_COOLDOWN = _env_int("REQUEST_COOLDOWN", 60)
+    REQUEST_EXPIRY_DAYS = _env_int("REQUEST_EXPIRY_DAYS", 7)
+    START_MESSAGE_CHECK_INTERVAL = _env_int("START_MESSAGE_CHECK_INTERVAL", 60)
+    WAREHOUSE_COOLDOWN_HOURS = _env_int("WAREHOUSE_COOLDOWN_HOURS", 6)
+    EXAM_BUTTON_TIMEOUT = _env_int("EXAM_BUTTON_TIMEOUT", 120)
 
     # Префиксы ников
     CADET_NICKNAME_PREFIX = "Курсант |"
@@ -77,32 +260,15 @@ class Config:
     FIRING_NICKNAME_PREFIX = "Уволен |"
     PPS_NICKNAME_PREFIX = "ППС |"
 
-    # Повышения / роли
-    LOG_RANK_MAPPING_CONFLICTS = True
-
-    RANK_ROLE_MAPPING = {
-        "Рядовой -> Младший Сержант": 1473503593989406801,
-        "Младший Сержант -> Сержант": 1472578761315713106,
-        "Сержант -> Старший Сержант": 1473494440743014552,
-        "Старший сержант -> Старшина": 1473503677896462387,
-        "Старшина -> Прапорщик": 1473503705474273496,
-        "Прапорщик -> Старший прапорщик": 1473503732476936373,
-        "Старший прапорщик -> Младший лейтенант": 1473503758741934180,
-        "Младший лейтенант -> Лейтенант": 1473503807005655133,
-        "Лейтенант -> Старший лейтенант": 1473503849397485609,
-        "Старший лейтенант -> Капитан": 1473503910013440193,
-
-        "Рядовой → Младший Сержант": 1473503593989406801,
-        "Младший Сержант → Сержант": 1472578761315713106,
-        "Сержант → Старший Сержант": 1473494440743014552,
-        "Старший сержант → Старшина": 1473503677896462387,
-        "Старшина → Прапорщик": 1473503705474273496,
-        "Прапорщик → Старший прапорщик": 1473503732476936373,
-        "Старший прапорщик → Младший лейтенант": 1473503758741934180,
-        "Младший лейтенант → Лейтенант": 1473503807005655133,
-        "Лейтенант → Старший лейтенант": 1473503849397485609,
-        "Старший лейтенант → Капитан": 1473503910013440193,
-    }
+    # Маппинг текста повышения -> ID роли (новый формат: RANKMAP_01=Текст:ID; старый RANK_ROLE_MAPPING тоже поддерживается)
+    RANK_ROLE_MAPPING = _parse_prefixed_rank_role_mapping("RANKMAP_")
+    if not RANK_ROLE_MAPPING:
+        RANK_ROLE_MAPPING = _parse_rank_role_mapping_legacy(os.getenv("RANK_ROLE_MAPPING", ""))
+    if not RANK_ROLE_MAPPING:
+        raise ValueError(
+            "RANKMAP_* / RANK_ROLE_MAPPING не задан в .env. "
+            "Укажите соответствие повышения и ID роли."
+        )
 
     NON_PPS_RANKS = [
         "рядовой -> младший сержант",

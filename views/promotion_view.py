@@ -11,122 +11,201 @@ from utils.rate_limiter import apply_role_changes, safe_discord_call
 from utils.embed_utils import copy_embed, add_officer_field, update_embed_status
 from services.audit import send_to_audit
 from services.action_locks import action_lock
-from services.ranks import (
-    find_role_id_for_transition,
-    parse_transition_to_new_rank,
-    get_all_rank_role_ids_from_mapping,
-)
+from services.ranks import find_role_id_for_transition, get_all_rank_role_ids_from_mapping
 from database import delete_request
-from constants import StatusValues
+from constants import StatusValues, FieldNames, WebhookPatterns
 
 logger = logging.getLogger(__name__)
 
-_ARROW_RE = re.compile(r"\s*(?:->|→|➡|⇒|=+>)\s*")
 
-
-def _norm_text(s: str) -> str:
-    return " ".join((s or "").strip().lower().replace("ё", "е").split())
+def _norm_text(value: str) -> str:
+    return " ".join((value or "").strip().lower().split())
 
 
 def _collect_rank_names_from_mapping():
-    rank_names = set()
-
+    names = set()
     raw = getattr(Config, "RANK_ROLE_MAPPING", {}) or {}
     for key in raw.keys():
-        parts = _ARROW_RE.split(str(key))
-        if len(parts) != 2:
-            continue
-        left = _norm_text(parts[0])
-        right = _norm_text(parts[1])
-        if left:
-            rank_names.add(left)
-        if right:
-            rank_names.add(right)
-
-    rank_names.update({
-        "рядовой",
-        "младший сержант",
-        "сержант",
-        "старший сержант",
-        "старшина",
-        "прапорщик",
-        "старший прапорщик",
-        "младший лейтенант",
-        "лейтенант",
-        "старший лейтенант",
-        "капитан",
-        "майор",
-        "подполковник",
-        "полковник",
-    })
-    return rank_names
+        text = str(key or "")
+        parts = re.split(r"\s*(?:->|→|➡|⇒|=+>)\s*", text)
+        if len(parts) == 2:
+            old_rank = _norm_text(parts[0])
+            new_rank = _norm_text(parts[1])
+            if old_rank:
+                names.add(old_rank)
+            if new_rank:
+                names.add(new_rank)
+    return names
 
 
-def _is_rank_role_by_name(role_name: str, known_rank_names: set[str]) -> bool:
-    rn = _norm_text(role_name)
-    if not rn:
-        return False
-
-    for rank_name in known_rank_names:
-        if rn == rank_name:
-            return True
-        if rn == f"{rank_name} полиции":
-            return True
-        if rank_name in rn:
-            return True
-    return False
+def _is_rank_role_by_name(role_name: str, rank_names: set[str]) -> bool:
+    return _norm_text(role_name) in (rank_names or set())
 
 
 class PromotionView(View):
     def __init__(self, user_id: int, new_rank: str, full_name: str, message_id: int):
         super().__init__(timeout=None)
-        self.user_id = user_id
-        self.new_rank = new_rank
-        self.full_name = full_name
-        self.message_id = message_id
+        self.user_id = int(user_id)
+        self.new_rank = str(new_rank or "").strip()
+        self.full_name = str(full_name or "сотрудник").strip() or "сотрудник"
+        self.message_id = int(message_id)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        required_role_id = Config.PROMOTION_CHANNELS.get(interaction.channel.id)
-        if not required_role_id:
-            await interaction.response.send_message("❌ Этот канал не настроен для повышений.", ephemeral=True)
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Команда доступна только на сервере.", ephemeral=True)
             return False
 
-        staff_role = interaction.guild.get_role(required_role_id)
-        if staff_role not in interaction.user.roles:
+        required_role_id = Config.PROMOTION_CHANNELS.get(interaction.channel.id)
+        if not required_role_id:
+            await interaction.response.send_message("❌ Для этого канала не настроена роль доступа.", ephemeral=True)
+            return False
+
+        staff_role = interaction.guild.get_role(int(required_role_id))
+        if not staff_role or staff_role not in interaction.user.roles:
             await interaction.response.send_message(ErrorMessages.NO_PERMISSION, ephemeral=True)
             return False
         return True
 
-    @discord.ui.button(label="✅ принять", style=discord.ButtonStyle.success, custom_id="promotion_accept")
-    async def accept_button(self, interaction: discord.Interaction, button: Button):
+    @discord.ui.button(label="✅ одобрить повышение", style=discord.ButtonStyle.success, custom_id="promotion_accept")
+    async def accept_promotion_button(self, interaction: discord.Interaction, button: Button):
         await self.handle_accept(interaction)
 
-    @discord.ui.button(label="❌ отклонить", style=discord.ButtonStyle.danger, custom_id="promotion_reject")
-    async def reject_button(self, interaction: discord.Interaction, button: Button):
+    @discord.ui.button(label="❌ отклонить рапорт", style=discord.ButtonStyle.secondary, custom_id="promotion_reject")
+    async def reject_promotion_button(self, interaction: discord.Interaction, button: Button):
         from modals.promotion_reject_reason import PromotionRejectReasonModal
         modal = PromotionRejectReasonModal(
             user_id=self.user_id,
             message_id=self.message_id,
-            new_rank=self.new_rank,
-            full_name=self.full_name
+            additional_data={"new_rank": self.new_rank, "full_name": self.full_name}
         )
         await interaction.response.send_modal(modal)
 
+    def _rebuild_request_data_from_embed(self, message: discord.Message):
+        if not message or not message.embeds:
+            return None
+        embed = message.embeds[0]
+
+        discord_id = self.user_id
+        full_name = self.full_name or "сотрудник"
+        rank_transition = ""
+        new_rank = self.new_rank
+
+        desc = (embed.description or "")
+        if desc:
+            m = re.search(WebhookPatterns.PROMOTION.get("user_id_desc", r"<@(\d+)>") , desc)
+            if m:
+                try:
+                    discord_id = int(m.group(1))
+                except Exception:
+                    pass
+
+            # ожидаемый формат: "👤 <переход ранга> | <ФИО>"
+            m = re.search(WebhookPatterns.PROMOTION.get("rank_and_name", r"👤\s*(.+?)\s*\|\s*(.+)"), desc, re.IGNORECASE)
+            if m:
+                rank_transition = (m.group(1) or "").strip()
+                parsed_name = (m.group(2) or "").strip()
+                if parsed_name:
+                    full_name = parsed_name
+
+        for field in embed.fields:
+            fname = (field.name or "").strip().lower()
+            fval = (field.value or "").strip()
+            if fname in {FieldNames.NEW_RANK.lower(), FieldNames.RANK.lower()} and fval:
+                new_rank = fval
+            elif fname in {FieldNames.FULL_NAME.lower(), "фио"} and fval:
+                full_name = fval
+
+        return {
+            "discord_id": discord_id,
+            "full_name": full_name,
+            "new_rank": new_rank,
+            "rank_transition": rank_transition,
+            "message_link": getattr(message, "jump_url", ""),
+        }
+
     async def handle_accept(self, interaction: discord.Interaction):
+        """Обработка принятия заявки на повышение"""
         await interaction.response.defer(ephemeral=True)
 
         try:
             async with action_lock(self.message_id, "принятие повышения"):
+                if not interaction.guild:
+                    await interaction.followup.send("❌ Команда доступна только на сервере.", ephemeral=True)
+                    return
+
+                message = interaction.message
+                if not message or not message.embeds:
+                    await interaction.followup.send("❌ У рапорта отсутствует embed.", ephemeral=True)
+                    return
+
+                # Fallback для старых рапортов
+                request_data = active_promotion_requests.get(self.message_id)
+                if not request_data:
+                    request_data = self._rebuild_request_data_from_embed(message)
+                    if request_data:
+                        active_promotion_requests[self.message_id] = request_data
+                        logger.warning(
+                            "Повышение: рапорт %s восстановлен из embed (state/БД пусто)",
+                            self.message_id
+                        )
+
+                if request_data:
+                    # Синхронизируем self.* (важно для старых view)
+                    try:
+                        self.user_id = int(request_data.get("discord_id", self.user_id))
+                    except (TypeError, ValueError):
+                        pass
+                    self.full_name = request_data.get("full_name", self.full_name) or "сотрудник"
+                    self.new_rank = request_data.get("new_rank", self.new_rank) or self.new_rank
+
+                # Защита от повторной обработки по статусу embed
+                try:
+                    for field in message.embeds[0].fields:
+                        if (field.name or "").strip() == FieldNames.STATUS:
+                            status_text = (field.value or "").strip().lower()
+                            if "принят" in status_text or "одоб" in status_text:
+                                await interaction.followup.send("⚠️ Этот рапорт уже обработан.", ephemeral=True)
+                                return
+                            if "отклон" in status_text:
+                                await interaction.followup.send("⚠️ Этот рапорт уже отклонён.", ephemeral=True)
+                                return
+                except Exception:
+                    pass
+
                 member = interaction.guild.get_member(self.user_id)
+                if not member:
+                    try:
+                        member = await interaction.guild.fetch_member(self.user_id)
+                    except discord.NotFound:
+                        member = None
+                    except discord.Forbidden:
+                        await interaction.followup.send("❌ У бота нет прав получить участника.", ephemeral=True)
+                        return
+                    except discord.HTTPException as e:
+                        logger.warning("Promotion: HTTP ошибка fetch_member %s: %s", self.user_id, e)
+                        await interaction.followup.send("❌ Ошибка Discord API при получении пользователя.", ephemeral=True)
+                        return
+
                 if not member:
                     await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="пользователь"), ephemeral=True)
                     return
 
-                new_role_id = find_role_id_for_transition(self.new_rank)
+                # Ключевой фикс: ищем роль сначала по rank_transition, потом по new_rank
+                rank_transition = ""
+                if request_data:
+                    rank_transition = (request_data.get("rank_transition") or "").strip()
+
+                role_lookup_value = rank_transition or self.new_rank
+                new_role_id = find_role_id_for_transition(role_lookup_value)
+
                 if not new_role_id:
                     await interaction.followup.send(
                         f"❌ Не настроена роль для повышения: `{self.new_rank}`. Проверь RANK_ROLE_MAPPING.",
                         ephemeral=True
+                    )
+                    logger.warning(
+                        "Promotion: не найдена роль | lookup='%s' | display_rank='%s' | msg_id=%s",
+                        role_lookup_value, self.new_rank, self.message_id
                     )
                     return
 
@@ -150,42 +229,67 @@ class PromotionView(View):
                         continue
                     if role.id == new_role.id:
                         continue
-
                     if role.id in rank_role_ids or _is_rank_role_by_name(role.name, rank_names):
                         roles_to_remove.append(role)
 
                 logger.info(
-                    "Повышение: user=%s target_role=%s remove_roles=%s remove_role_names=%s",
+                    "Повышение: user=%s target_role=%s lookup='%s' remove_roles=%s",
                     member.id,
                     new_role.id,
-                    [r.id for r in roles_to_remove],
-                    [r.name for r in roles_to_remove]
+                    role_lookup_value,
+                    [r.id for r in roles_to_remove]
                 )
 
-                if roles_to_remove:
-                    await apply_role_changes(member, remove=roles_to_remove)
+                # Снимаем/выдаем роли
+                try:
+                    if roles_to_remove:
+                        await apply_role_changes(member, remove=roles_to_remove)
+                    await apply_role_changes(member, add=[new_role])
+                except discord.Forbidden:
+                    await interaction.followup.send("❌ У бота нет прав изменить роли пользователя.", ephemeral=True)
+                    return
+                except discord.HTTPException as e:
+                    logger.warning("Promotion: HTTP ошибка изменения ролей user=%s: %s", member.id, e, exc_info=True)
+                    await interaction.followup.send("❌ Ошибка Discord API при изменении ролей.", ephemeral=True)
+                    return
 
-                await apply_role_changes(member, add=[new_role])
-
+                # Обновим member после смены ролей
                 try:
                     member = await interaction.guild.fetch_member(self.user_id)
-                    logger.info("Повышение: роли после изменения у %s: %s", member.id, [r.name for r in member.roles])
                 except Exception:
                     pass
 
+                # Академия / ППС логика
                 if interaction.channel.id == Config.ACADEMY_CHANNEL_ID:
-                    await self._handle_academy_promotion(member, interaction)
+                    try:
+                        await self._handle_academy_promotion(member, interaction)
+                    except discord.Forbidden:
+                        await interaction.followup.send("❌ У бота нет прав завершить перевод из академии.", ephemeral=True)
+                        return
+                    except discord.HTTPException as e:
+                        logger.warning("Promotion academy: HTTP ошибка user=%s: %s", member.id, e, exc_info=True)
+                        await interaction.followup.send("❌ Ошибка Discord API при обработке академии.", ephemeral=True)
+                        return
 
-                rank_for_audit = parse_transition_to_new_rank(self.new_rank) or self.new_rank
+                # Аудит
+                rank_for_audit = self.new_rank
+                try:
+                    await send_to_audit(
+                        interaction,
+                        member,
+                        Config.ACTION_PROMOTED,
+                        rank_for_audit,
+                        request_data.get("message_link") if request_data else f"https://discord.com/channels/{interaction.guild.id}/{interaction.channel.id}/{self.message_id}"
+                    )
+                except discord.Forbidden:
+                    logger.warning("Promotion audit: нет прав отправить аудит user=%s", member.id)
+                except discord.HTTPException as e:
+                    logger.warning("Promotion audit: HTTP ошибка user=%s: %s", member.id, e, exc_info=True)
+                except Exception as e:
+                    logger.warning("Promotion audit: ошибка user=%s: %s", member.id, e, exc_info=True)
 
-                await send_to_audit(
-                    interaction,
-                    member,
-                    Config.ACTION_PROMOTED,
-                    rank_for_audit,
-                    f"https://discord.com/channels/{interaction.guild.id}/{interaction.channel.id}/{self.message_id}"
-                )
-
+                # ЛС пользователю
+                dm_warning = None
                 try:
                     embed = discord.Embed(
                         title="✅ рапорт на повышение одобрен",
@@ -207,26 +311,61 @@ class PromotionView(View):
 
                     await member.send(embed=embed)
                 except discord.Forbidden:
-                    await interaction.followup.send(
-                        f"⚠️ Не удалось отправить уведомление пользователю {member.mention}",
-                        ephemeral=True
-                    )
+                    dm_warning = f"⚠️ Не удалось отправить уведомление пользователю {member.mention}"
+                except discord.HTTPException as e:
+                    logger.warning("Promotion DM: HTTP ошибка user=%s: %s", member.id, e)
+                    dm_warning = f"⚠️ Не удалось отправить уведомление пользователю {member.mention}"
 
-                message = await interaction.channel.fetch_message(self.message_id)
+                # Обновляем сообщение рапорта
+                try:
+                    message = await interaction.channel.fetch_message(self.message_id)
+                except discord.NotFound:
+                    await interaction.followup.send("❌ Сообщение рапорта было удалено.", ephemeral=True)
+                    return
+                except discord.Forbidden:
+                    await interaction.followup.send("❌ У бота нет доступа к сообщению рапорта.", ephemeral=True)
+                    return
+                except discord.HTTPException as e:
+                    logger.warning("Promotion: HTTP ошибка fetch_message %s: %s", self.message_id, e)
+                    await interaction.followup.send("❌ Ошибка Discord API при получении рапорта.", ephemeral=True)
+                    return
+
+                if not message.embeds:
+                    await interaction.followup.send("❌ У сообщения рапорта отсутствует embed.", ephemeral=True)
+                    return
+
                 new_embed = copy_embed(message.embeds[0])
                 new_embed = update_embed_status(new_embed, StatusValues.ACCEPTED, discord.Color.green())
                 new_embed = add_officer_field(new_embed, interaction.user.mention)
-                await message.edit(embed=new_embed, view=None)
 
-                if self.message_id in active_promotion_requests:
-                    del active_promotion_requests[self.message_id]
+                try:
+                    await message.edit(embed=new_embed, view=None)
+                except discord.NotFound:
+                    await interaction.followup.send("❌ Сообщение рапорта было удалено.", ephemeral=True)
+                    return
+                except discord.Forbidden:
+                    await interaction.followup.send("❌ У бота нет прав на редактирование рапорта.", ephemeral=True)
+                    return
+                except discord.HTTPException as e:
+                    logger.warning("Promotion: HTTP ошибка edit %s: %s", self.message_id, e, exc_info=True)
+                    await interaction.followup.send("❌ Ошибка Discord API при обновлении рапорта.", ephemeral=True)
+                    return
+
+                # Чистим state + БД
+                active_promotion_requests.pop(self.message_id, None)
+                try:
                     await asyncio.to_thread(delete_request, "promotion_requests", self.message_id)
+                except Exception as e:
+                    logger.warning("Не удалось удалить promotion_request %s из БД: %s", self.message_id, e, exc_info=True)
 
                 await interaction.followup.send(
                     f"✅ Пользователь {member.mention} повышен до {self.new_rank}",
                     ephemeral=True
                 )
-                logger.info("Рапорт %s принят сотрудником %s", self.message_id, interaction.user.id)
+                if dm_warning:
+                    await interaction.followup.send(dm_warning, ephemeral=True)
+
+                logger.info("Рапорт на повышение %s принят сотрудником %s", self.message_id, interaction.user.id)
 
         except RuntimeError as e:
             if str(e) == "ACTION_ALREADY_IN_PROGRESS":
@@ -236,22 +375,34 @@ class PromotionView(View):
             await interaction.followup.send(ErrorMessages.GENERIC, ephemeral=True)
 
         except Exception as e:
-            logger.error("Ошибка при принятии рапорта: %s", e, exc_info=True)
+            logger.error("Ошибка при принятии рапорта на повышение: %s", e, exc_info=True)
             await interaction.followup.send(ErrorMessages.GENERIC, ephemeral=True)
 
     async def _handle_academy_promotion(self, member: discord.Member, interaction: discord.Interaction):
         is_non_pps = any(rank in self.new_rank.lower() for rank in Config.NON_PPS_RANKS)
         if not is_non_pps:
-            academy_roles = [interaction.guild.get_role(rid) for rid in Config.CADET_ROLES_TO_GIVE if interaction.guild.get_role(rid)]
+            academy_roles = [
+                interaction.guild.get_role(rid)
+                for rid in Config.CADET_ROLES_TO_GIVE
+                if interaction.guild.get_role(rid)
+            ]
             if academy_roles:
                 await apply_role_changes(member, remove=academy_roles)
 
-            pps_roles = [interaction.guild.get_role(rid) for rid in Config.PPS_ROLE_IDS if interaction.guild.get_role(rid)]
+            pps_roles = [
+                interaction.guild.get_role(rid)
+                for rid in Config.PPS_ROLE_IDS
+                if interaction.guild.get_role(rid)
+            ]
             if pps_roles:
                 await apply_role_changes(member, add=pps_roles)
 
             try:
                 new_nick = f"{Config.PPS_NICKNAME_PREFIX} {self.full_name}"
                 await safe_discord_call(member.edit, nick=new_nick)
+            except discord.Forbidden:
+                logger.warning("Нет прав на смену ника при академическом повышении user=%s", member.id)
+            except discord.HTTPException as e:
+                logger.warning("HTTP ошибка при смене ника на ППС user=%s: %s", member.id, e, exc_info=True)
             except Exception as e:
-                logger.error("Ошибка при смене ника на ППС: %s", e)
+                logger.error("Ошибка при смене ника на ППС: %s", e, exc_info=True)

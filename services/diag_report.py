@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from config import Config
 import state
@@ -7,6 +8,12 @@ from database import (
     load_all_promotion_requests,
     load_all_warehouse_requests,
 )
+
+try:
+    from services.action_locks import locks_count
+except Exception:
+    def locks_count() -> int:
+        return -1
 
 
 def _ok(v: bool) -> str:
@@ -90,6 +97,47 @@ def _truncate_lines(lines: list[str], limit: int = 1000) -> str:
     return "\n".join(out) if out else "—"
 
 
+def _service_status_lines() -> list[str]:
+    lines = []
+
+    # Фоновые задачи (если ты уже добавил background_tasks в main.py)
+    bg_tasks = getattr(state, "background_tasks", None)
+    if isinstance(bg_tasks, dict):
+        alive = 0
+        dead = 0
+        names = []
+        for name, task in bg_tasks.items():
+            try:
+                is_alive = task is not None and not task.done()
+            except Exception:
+                is_alive = False
+
+            if is_alive:
+                alive += 1
+                names.append(f"✅ {name}")
+            else:
+                dead += 1
+                names.append(f"⚠️ {name}")
+
+        lines.append(f"Фоновые задачи: **{alive}** активных / **{dead}** завершённых")
+        if names:
+            lines.extend(names[:6])  # чтобы не раздувать embed
+    else:
+        lines.append("Фоновые задачи: ⚠️ state.background_tasks не инициализирован")
+
+    # Локи действий
+    try:
+        lc = locks_count()
+        if lc >= 0:
+            lines.append(f"Локи action_locks: **{lc}**")
+        else:
+            lines.append("Локи action_locks: ⚠️ недоступно")
+    except Exception:
+        lines.append("Локи action_locks: ❌ ошибка чтения")
+
+    return lines
+
+
 async def build_diag_embed(bot: discord.Client) -> discord.Embed:
     guild = bot.get_guild(Config.GUILD_ID)
 
@@ -120,8 +168,18 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
     )
 
     # Память / БД
-    embed.add_field(name="Память (state)", value=_format_counts(_state_counts()), inline=True)
-    embed.add_field(name="База (SQLite)", value=_format_counts(_db_counts()), inline=True)
+    state_counts = _state_counts()
+    db_counts = await asyncio.to_thread(_db_counts)
+
+    embed.add_field(name="Память (state)", value=_format_counts(state_counts), inline=True)
+    embed.add_field(name="База (SQLite)", value=_format_counts(db_counts), inline=True)
+
+    # Сервисное состояние
+    embed.add_field(
+        name="Сервисное состояние",
+        value=_truncate_lines(_service_status_lines()),
+        inline=False
+    )
 
     # Права бота
     if me:

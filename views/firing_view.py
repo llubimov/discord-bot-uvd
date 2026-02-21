@@ -23,8 +23,12 @@ class FiringView(View):
         self.user_id = user_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Команда доступна только на сервере.", ephemeral=True)
+            return False
+
         staff_role = interaction.guild.get_role(Config.FIRING_STAFF_ROLE_ID)
-        if staff_role not in interaction.user.roles:
+        if not staff_role or staff_role not in interaction.user.roles:
             await interaction.response.send_message(ErrorMessages.NO_PERMISSION, ephemeral=True)
             return False
         return True
@@ -53,11 +57,17 @@ class FiringView(View):
         if not m_name:
             m_name = re.search(WebhookPatterns.FIRING["full_name_alt"], desc, re.IGNORECASE)
         if m_name:
-            full_name = m_name.group(1).strip()
+            try:
+                full_name = (m_name.group(1) or "").strip() or "Сотрудник"
+            except Exception:
+                full_name = "Сотрудник"
 
         m_reason = re.search(WebhookPatterns.FIRING["reason"], desc, re.IGNORECASE)
         if m_reason:
-            reason = m_reason.group(1).strip()
+            try:
+                reason = (m_reason.group(1) or "").strip() or "псж"
+            except Exception:
+                reason = "псж"
 
         return {
             "discord_id": self.user_id,
@@ -71,8 +81,17 @@ class FiringView(View):
 
         try:
             async with action_lock(interaction.message.id, "подтверждение увольнения"):
+                if not interaction.guild:
+                    await interaction.followup.send("❌ Команда доступна только на сервере.", ephemeral=True)
+                    return
+
+                if not interaction.message.embeds:
+                    await interaction.followup.send("❌ У рапорта отсутствует embed.", ephemeral=True)
+                    return
+
                 request_data = active_firing_requests.get(interaction.message.id)
 
+                # Fallback для старых рапортов
                 if not request_data:
                     request_data = self._rebuild_request_data_from_embed(interaction.message)
                     if request_data:
@@ -83,16 +102,32 @@ class FiringView(View):
                         )
 
                 if not request_data:
-                    await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="заявка"), ephemeral=True)
+                    await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="рапорт"), ephemeral=True)
                     return
 
-                member = interaction.guild.get_member(int(request_data["discord_id"]))
+                # Защита от уже обработанного рапорта (по embed статусу)
+                try:
+                    for field in interaction.message.embeds[0].fields:
+                        fname = (field.name or "").strip()
+                        fval = (field.value or "").strip().lower()
+                        if fname == FieldNames.STATUS and ("уволен" in fval or "удовлетворен" in fval):
+                            await interaction.followup.send("⚠️ Этот рапорт уже обработан.", ephemeral=True)
+                            return
+                except Exception:
+                    pass
+
+                try:
+                    member = interaction.guild.get_member(int(request_data.get("discord_id", 0)))
+                except (TypeError, ValueError):
+                    member = None
+
                 if not member:
                     await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="пользователь"), ephemeral=True)
                     return
 
                 full_name = request_data.get("full_name", "Сотрудник")
 
+                # Снимаем роли
                 roles_to_keep_ids = set(Config.ROLES_TO_KEEP_ON_FIRE)
                 roles_to_remove = []
                 for role in member.roles:
@@ -102,12 +137,30 @@ class FiringView(View):
                         roles_to_remove.append(role)
 
                 if roles_to_remove:
-                    await apply_role_changes(member, remove=roles_to_remove)
+                    try:
+                        await apply_role_changes(member, remove=roles_to_remove)
+                    except discord.Forbidden:
+                        await interaction.followup.send("❌ У бота нет прав снять роли.", ephemeral=True)
+                        return
+                    except discord.HTTPException as e:
+                        logger.warning("HTTP ошибка при снятии ролей (firing): %s", e, exc_info=True)
+                        await interaction.followup.send("❌ Ошибка Discord API при снятии ролей.", ephemeral=True)
+                        return
 
+                # Выдаём роль уволенного
                 fired_role = interaction.guild.get_role(Config.FIRED_ROLE_ID)
                 if fired_role:
-                    await apply_role_changes(member, add=[fired_role])
+                    try:
+                        await apply_role_changes(member, add=[fired_role])
+                    except discord.Forbidden:
+                        await interaction.followup.send("❌ У бота нет прав выдать роль уволенного.", ephemeral=True)
+                        return
+                    except discord.HTTPException as e:
+                        logger.warning("HTTP ошибка при выдаче роли уволенного: %s", e, exc_info=True)
+                        await interaction.followup.send("❌ Ошибка Discord API при выдаче роли.", ephemeral=True)
+                        return
 
+                # Меняем ник
                 try:
                     parts = full_name.split()
                     if len(parts) >= 2:
@@ -115,18 +168,34 @@ class FiringView(View):
                     else:
                         new_nick = f"{Config.FIRING_NICKNAME_PREFIX} {full_name}"
                     await safe_discord_call(member.edit, nick=new_nick)
+                except discord.Forbidden:
+                    logger.warning("Нет прав на смену ника пользователя %s", member.id)
+                    new_nick = f"{Config.FIRING_NICKNAME_PREFIX} {full_name}"
+                except discord.HTTPException as e:
+                    logger.warning("HTTP ошибка при смене ника пользователя %s: %s", member.id, e, exc_info=True)
+                    new_nick = f"{Config.FIRING_NICKNAME_PREFIX} {full_name}"
                 except Exception as e:
-                    logger.error("Ошибка при смене ника: %s", e)
+                    logger.error("Ошибка при смене ника: %s", e, exc_info=True)
                     new_nick = f"{Config.FIRING_NICKNAME_PREFIX} {full_name}"
 
-                await send_to_audit(
-                    interaction,
-                    member,
-                    Config.ACTION_FIRED,
-                    Config.RANK_FIRED,
-                    request_data.get("message_link") or interaction.message.jump_url
-                )
+                # Аудит
+                try:
+                    await send_to_audit(
+                        interaction,
+                        member,
+                        Config.ACTION_FIRED,
+                        Config.RANK_FIRED,
+                        request_data.get("message_link") or interaction.message.jump_url
+                    )
+                except discord.Forbidden:
+                    logger.warning("Нет прав на отправку аудита увольнения (user=%s)", member.id)
+                except discord.HTTPException as e:
+                    logger.warning("HTTP ошибка аудита увольнения (user=%s): %s", member.id, e, exc_info=True)
+                except Exception as e:
+                    logger.warning("Ошибка аудита увольнения (user=%s): %s", member.id, e, exc_info=True)
 
+                # ЛС пользователю
+                dm_warning = None
                 try:
                     embed = discord.Embed(
                         title="✅ рапорт об увольнении удовлетворен",
@@ -139,11 +208,12 @@ class FiringView(View):
                     embed.add_field(name="причина", value=request_data.get("reason", "псж"), inline=False)
                     await member.send(embed=embed)
                 except discord.Forbidden:
-                    await interaction.followup.send(
-                        f"⚠️ Не удалось отправить уведомление пользователю {member.mention}",
-                        ephemeral=True
-                    )
+                    dm_warning = f"⚠️ Не удалось отправить уведомление пользователю {member.mention}"
+                except discord.HTTPException as e:
+                    logger.warning("HTTP ошибка при ЛС об увольнении пользователю %s: %s", member.id, e)
+                    dm_warning = f"⚠️ Не удалось отправить уведомление пользователю {member.mention}"
 
+                # Обновляем сообщение рапорта
                 message = interaction.message
                 old_embed = message.embeds[0]
                 new_embed = copy_embed(old_embed)
@@ -159,12 +229,30 @@ class FiringView(View):
                 if not found:
                     new_embed.add_field(name=FieldNames.STATUS, value=StatusValues.FIRED, inline=True)
 
-                await message.edit(embed=new_embed, view=None)
+                try:
+                    await message.edit(embed=new_embed, view=None)
+                except discord.NotFound:
+                    await interaction.followup.send("❌ Сообщение рапорта было удалено.", ephemeral=True)
+                    return
+                except discord.Forbidden:
+                    await interaction.followup.send("❌ У бота нет прав на редактирование рапорта.", ephemeral=True)
+                    return
+                except discord.HTTPException as e:
+                    logger.warning("HTTP ошибка при обновлении рапорта увольнения %s: %s", message.id, e, exc_info=True)
+                    await interaction.followup.send("❌ Ошибка Discord API при обновлении рапорта.", ephemeral=True)
+                    return
 
+                # Чистим state + БД
                 active_firing_requests.pop(interaction.message.id, None)
-                await asyncio.to_thread(delete_request, "firing_requests", interaction.message.id)
+                try:
+                    await asyncio.to_thread(delete_request, "firing_requests", interaction.message.id)
+                except Exception as e:
+                    logger.warning("Не удалось удалить firing_request %s из БД: %s", interaction.message.id, e, exc_info=True)
 
                 await interaction.followup.send(f"✅ Пользователь {member.mention} уволен.", ephemeral=True)
+                if dm_warning:
+                    await interaction.followup.send(dm_warning, ephemeral=True)
+
                 logger.info("Пользователь %s уволен сотрудником %s", member.id, interaction.user.id)
 
         except RuntimeError as e:

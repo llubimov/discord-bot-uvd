@@ -4,18 +4,27 @@
 import discord
 from discord.ext import commands
 import logging
+from logging.handlers import RotatingFileHandler
 import asyncio
 from datetime import datetime, timedelta
+from typing import Awaitable, Callable
 
 import state
 from config import Config
 
 # ========== НАСТРОЙКА ЛОГИРОВАНИЯ ==========
+file_handler = RotatingFileHandler(
+    Config.LOG_FILE,
+    maxBytes=2 * 1024 * 1024,  # 2 MB
+    backupCount=5,
+    encoding="utf-8"
+)
+
 logging.basicConfig(
     level=Config.LOG_LEVEL,
     format=Config.LOG_FORMAT,
     handlers=[
-        logging.FileHandler(Config.LOG_FILE, encoding="utf-8"),
+        file_handler,
         logging.StreamHandler()
     ]
 )
@@ -28,6 +37,8 @@ intents.members = True
 
 bot = commands.Bot(command_prefix=Config.COMMAND_PREFIX, intents=intents)
 state.bot = bot
+# Синхронизацию slash-команд делаем только один раз (не на каждый reconnect)
+_tree_synced_once = False
 
 # ========== ИМПОРТ МОДУЛЕЙ ==========
 from database import init_db, delete_request
@@ -52,12 +63,49 @@ warehouse_position_manager = WarehousePositionManager(bot)
 cleanup_manager = CleanupManager(bot)
 view_restorer = ViewRestorer(bot)
 
-# Если где-то в проекте используется state.warehouse_cooldown — сохраним единый экземпляр
+# Хранилище фоновых задач (защита от повторного запуска в on_ready)
+if not hasattr(state, "background_tasks") or not isinstance(getattr(state, "background_tasks", None), dict):
+    state.background_tasks = {}
+
+# Единый экземпляр кулдауна склада: используем singleton из services
 try:
-    from services.warehouse_cooldown import WarehouseCooldown
-    state.warehouse_cooldown = WarehouseCooldown()
+    from services import warehouse_cooldown
+    state.warehouse_cooldown = warehouse_cooldown
 except Exception as e:
-    logger.warning("⚠️ Не удалось инициализировать WarehouseCooldown: %s", e)
+    logger.warning("⚠️ Не удалось подключить warehouse_cooldown: %s", e)
+
+
+def _bg_task_done(task_name: str, task: asyncio.Task) -> None:
+    """Логирование завершения фоновой задачи и очистка ссылки из state."""
+    try:
+        if task.cancelled():
+            logger.warning("⚠️ Фоновая задача '%s' была отменена", task_name)
+            return
+
+        exc = task.exception()
+        if exc is not None:
+            logger.error("❌ Фоновая задача '%s' завершилась с ошибкой: %s", task_name, exc, exc_info=exc)
+        else:
+            logger.warning("⚠️ Фоновая задача '%s' неожиданно завершилась без ошибки", task_name)
+    except Exception as callback_error:
+        logger.error("❌ Ошибка в callback фоновой задачи '%s': %s", task_name, callback_error, exc_info=True)
+    finally:
+        current = getattr(state, "background_tasks", {}).get(task_name)
+        if current is task:
+            state.background_tasks.pop(task_name, None)
+
+
+def _ensure_background_task(task_name: str, coro_factory: Callable[[], Awaitable]) -> None:
+    """Запускает фоновую задачу только один раз (даже если on_ready вызван повторно)."""
+    existing = getattr(state, "background_tasks", {}).get(task_name)
+    if existing and not existing.done():
+        logger.info("ℹ️ Фоновая задача '%s' уже запущена, повторный запуск пропущен", task_name)
+        return
+
+    task = asyncio.create_task(coro_factory(), name=f"uvd:{task_name}")
+    state.background_tasks[task_name] = task
+    task.add_done_callback(lambda t, name=task_name: _bg_task_done(name, t))
+    logger.info("▶️ Запущена фоновая задача: %s", task_name)
 
 
 # ============================================================================
@@ -161,6 +209,7 @@ async def diag_clean_orphans_error(ctx, error):
     logger.error("Ошибка команды !diag_clean_orphans (handler): %s", error, exc_info=True)
     await ctx.send("❌ Ошибка выполнения команды.")
 
+
 @bot.command(name="diag")
 @commands.has_permissions(administrator=True)
 async def diag_command(ctx):
@@ -181,6 +230,7 @@ async def diag_command_error(ctx, error):
     logger.error("Ошибка команды !diag (handler): %s", error, exc_info=True)
     await ctx.send("❌ Ошибка выполнения команды.")
 
+
 @bot.command(name="clear_firing")
 @commands.has_permissions(administrator=True)
 async def clear_firing_requests(ctx, days: int = 7):
@@ -192,7 +242,6 @@ async def clear_firing_requests(ctx, days: int = 7):
         for msg_id, request in (getattr(state, "active_firing_requests", {}) or {}).items():
             created_at = request.get("created_at")
             if not created_at:
-                # Если даты нет — считаем запись подозрительной и тоже удаляем
                 to_delete.append(msg_id)
                 continue
 
@@ -202,7 +251,6 @@ async def clear_firing_requests(ctx, days: int = 7):
             except Exception:
                 to_delete.append(msg_id)
 
-        # Удаляем из памяти и БД
         deleted_count = 0
         for msg_id in to_delete:
             state.active_firing_requests.pop(msg_id, None)
@@ -236,37 +284,54 @@ async def clear_firing_error(ctx, error):
 
 @bot.event
 async def on_ready():
-    """Выполняется при запуске бота"""
+    """Выполняется при запуске бота и при повторных подключениях."""
 
     logger.info("=" * 60)
-    logger.info("🤖 БОТ ЗАПУЩЕН: %s", bot.user)
+    logger.info("🤖 БОТ ЗАПУЩЕН / ПОДКЛЮЧЕН: %s", bot.user)
     logger.info("=" * 60)
 
     # 1) База данных
     init_db()
     logger.info("✅ База данных подключена")
 
-    # 2) Синхронизация команд
-    try:
-        synced = await bot.tree.sync()
-        logger.info("✅ Синхронизировано %s команд: %s", len(synced), [cmd.name for cmd in synced])
-    except Exception as e:
-        logger.error("❌ Ошибка синхронизации команд: %s", e)
+    # 2) Синхронизация команд (только один раз)
+    global _tree_synced_once
+    if not _tree_synced_once:
+        try:
+            synced = await bot.tree.sync()
+            _tree_synced_once = True
+            logger.info("✅ Синхронизировано %s команд: %s", len(synced), [cmd.name for cmd in synced])
+        except Exception as e:
+            logger.error("❌ Ошибка синхронизации команд: %s", e, exc_info=True)
+    else:
+        logger.info("ℹ️ Синхронизация команд пропущена (уже выполнена ранее)")
+    
+        
+        
+    
+        
 
     # 3) Восстановление view
-    await view_restorer.restore_all()
+    try:
+        await view_restorer.restore_all()
+        logger.info("✅ Восстановление View завершено")
+    except Exception as e:
+        logger.error("❌ Ошибка восстановления View: %s", e, exc_info=True)
 
-    # 4) Диагностика при запуске (русские логи)
-    await run_startup_checks(bot)
-    await run_health_report(bot)
+    # 4) Диагностика при запуске
+    try:
+        await run_startup_checks(bot)
+        await run_health_report(bot)
+    except Exception as e:
+        logger.error("❌ Ошибка стартовой диагностики: %s", e, exc_info=True)
 
-    # 5) Фоновые задачи
-    bot.loop.create_task(start_manager.start_checking())
-    bot.loop.create_task(warehouse_position_manager.start_checking())
-    bot.loop.create_task(cleanup_manager.start_cleanup())
+    # 5) Фоновые задачи (запуск только один раз)
+    _ensure_background_task("start_position_checker", start_manager.start_checking)
+    _ensure_background_task("warehouse_position_checker", warehouse_position_manager.start_checking)
+    _ensure_background_task("cleanup_manager", cleanup_manager.start_cleanup)
 
     logger.info("=" * 60)
-    logger.info("✅ БОТ ПОЛНОСТЬЮ ГОТОВ К РАБОТЕ")
+    logger.info("✅ БОТ ГОТОВ К РАБОТЕ")
     logger.info("=" * 60)
 
 
@@ -282,7 +347,6 @@ async def on_message(message):
     if message.author == bot.user:
         return
 
-    # Вебхуки (увольнения / повышения)
     if message.webhook_id:
         await webhook_handler.process_webhook(message)
 

@@ -2,9 +2,10 @@ import discord
 from discord.ui import View, Button
 import logging
 from modals import CadetModal, TransferModal, GovModal
-from views.message_texts import ErrorMessages, StartMessages
+from views.message_texts import ErrorMessages
 
 logger = logging.getLogger(__name__)
+
 
 class StartView(View):
     def __init__(self):
@@ -14,32 +15,41 @@ class StartView(View):
         return True
 
     async def on_error(self, interaction: discord.Interaction, error: Exception, item):
-        logger.error(f"Ошибка в StartView: {error}", exc_info=True)
-        await interaction.response.send_message(MessageConfig.ERR_GENERIC, ephemeral=True)
+        logger.error("Ошибка в StartView: %s", error, exc_info=True)
+        if interaction.response.is_done():
+            await interaction.followup.send(ErrorMessages.GENERIC, ephemeral=True)
+        else:
+            await interaction.response.send_message(ErrorMessages.GENERIC, ephemeral=True)
 
-    @discord.ui.button(label="🟢 курсант", style=discord.ButtonStyle.success, custom_id="cadet_role")
+    @discord.ui.button(label="🟢 Курсант", style=discord.ButtonStyle.success, custom_id="cadet_role")
     async def cadet_button(self, interaction: discord.Interaction, button: Button):
         try:
-            modal = CadetModal()
-            await interaction.response.send_modal(modal)
+            await interaction.response.send_modal(CadetModal())
         except Exception as e:
-            logger.error(f"Ошибка в cadet_button: {e}", exc_info=True)
-            await interaction.response.send_message(MessageConfig.ERR_GENERIC, ephemeral=True)
+            logger.error("Ошибка в cadet_button: %s", e, exc_info=True)
+            if interaction.response.is_done():
+                await interaction.followup.send(ErrorMessages.GENERIC, ephemeral=True)
+            else:
+                await interaction.response.send_message(ErrorMessages.GENERIC, ephemeral=True)
 
-    @discord.ui.button(label="🔵 перевод", style=discord.ButtonStyle.primary, custom_id="transfer_role")
+    @discord.ui.button(label="🔵 Перевод", style=discord.ButtonStyle.primary, custom_id="transfer_role")
     async def transfer_button(self, interaction: discord.Interaction, button: Button):
         try:
-            modal = TransferModal()
-            await interaction.response.send_modal(modal)
+            await interaction.response.send_modal(TransferModal())
         except Exception as e:
-            logger.error(f"Ошибка в transfer_button: {e}", exc_info=True)
-            await interaction.response.send_message(MessageConfig.ERR_GENERIC, ephemeral=True)
+            logger.error("Ошибка в transfer_button: %s", e, exc_info=True)
+            if interaction.response.is_done():
+                await interaction.followup.send(ErrorMessages.GENERIC, ephemeral=True)
+            else:
+                await interaction.response.send_message(ErrorMessages.GENERIC, ephemeral=True)
 
-    @discord.ui.button(label="⚪ гос сотрудник", style=discord.ButtonStyle.secondary, custom_id="gov_role")
+    @discord.ui.button(label="⚪ Гос. Сотрудник", style=discord.ButtonStyle.secondary, custom_id="gov_role")
     async def gov_button(self, interaction: discord.Interaction, button: Button):
         try:
-            modal = GovModal()
-            await interaction.response.send_modal(modal)
+            await interaction.response.send_modal(GovModal())
         except Exception as e:
-            logger.error(f"Ошибка в gov_button: {e}", exc_info=True)
-            await interaction.response.send_message(MessageConfig.ERR_GENERIC, ephemeral=True)
+            logger.error("Ошибка в gov_button: %s", e, exc_info=True)
+            if interaction.response.is_done():
+                await interaction.followup.send(ErrorMessages.GENERIC, ephemeral=True)
+            else:
+                await interaction.response.send_message(ErrorMessages.GENERIC, ephemeral=True)

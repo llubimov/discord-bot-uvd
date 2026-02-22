@@ -29,13 +29,19 @@ def log_memory_state():
         logger.error("Отчёт состояния: ошибка чтения памяти (state): %s", e, exc_info=True)
 
 
-def log_db_state():
-    """Короткая сводка по БД."""
+def _load_all_tables_for_report():
+    """Синхронная загрузка таблиц БД для отчёта (вызывается в отдельном потоке)."""
+    req = load_all_requests()
+    fir = load_all_firing_requests()
+    pro = load_all_promotion_requests()
+    wh = load_all_warehouse_requests()
+    return req, fir, pro, wh
+
+
+async def log_db_state():
+    """Короткая сводка по БД (не блокирует event loop)."""
     try:
-        req = load_all_requests()
-        fir = load_all_firing_requests()
-        pro = load_all_promotion_requests()
-        wh = load_all_warehouse_requests()
+        req, fir, pro, wh = await asyncio.to_thread(_load_all_tables_for_report)
 
         logger.info(
             "🗄️ БАЗА   | заявки=%s | увольнения=%s | повышения=%s | склад=%s",
@@ -70,9 +76,14 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
     logger.info("🧹 Проверка осиротевших записей (только проверка=%s)...", dry_run)
 
     try:
-        firing = load_all_firing_requests()
-        promotion = load_all_promotion_requests()
-        warehouse = load_all_warehouse_requests()
+        def _load_orphans():
+            return (
+                load_all_firing_requests(),
+                load_all_promotion_requests(),
+                load_all_warehouse_requests(),
+            )
+
+        firing, promotion, warehouse = await asyncio.to_thread(_load_orphans)
 
         firing_channel = bot.get_channel(Config.FIRING_CHANNEL_ID)
         warehouse_channel = bot.get_channel(Config.WAREHOUSE_REQUEST_CHANNEL_ID)
@@ -133,6 +144,6 @@ async def run_health_report(bot: discord.Client):
     """
     logger.info("========== ОТЧЁТ О СОСТОЯНИИ ==========")
     log_memory_state()
-    log_db_state()
+    await log_db_state()
     await cleanup_orphan_records(bot, dry_run=True)
     logger.info("======== ОТЧЁТ О СОСТОЯНИИ ГОТОВ ========")

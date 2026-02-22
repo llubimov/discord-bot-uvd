@@ -104,6 +104,15 @@ async def _safe_followup_warning(interaction, text: str):
 
 
 async def send_to_audit(interaction, target_member, action, rank, reason_link):
+    # Если аудит не настроен — не ломаем основное действие
+    if not Config.AUDIT_FORM_URL:
+        logger.warning("Аудит: AUDIT_FORM_URL не настроен, отправка пропущена")
+        await _safe_followup_warning(
+            interaction,
+            "⚠️ Внешний кадровый аудит не настроен (AUDIT_FORM_URL). Действие выполнено без отправки в форму."
+        )
+        return False
+
     rank_value = _get_rank_value(action, rank)
     form_data = _build_form_data(interaction, target_member, action, rank_value, reason_link)
 

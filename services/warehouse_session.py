@@ -1,5 +1,5 @@
 from typing import Dict, List, Any, Tuple, Hashable
-from datetime import datetime
+from datetime import datetime, timedelta
 import logging
 from data.warehouse_items import WAREHOUSE_ITEMS
 
@@ -14,7 +14,29 @@ class WarehouseSession:
     """Работа с корзиной пользователя / временной сессией склада"""
 
     @staticmethod
+    def purge_expired(max_age_hours: int = 24) -> int:
+        """Удаляет старые сессии корзины, чтобы не копить память бесконечно."""
+        cutoff = datetime.now() - timedelta(hours=max_age_hours)
+        to_delete = []
+
+        for key, session in list(user_sessions.items()):
+            created = session.get("created_at")
+            if isinstance(created, datetime) and created < cutoff:
+                to_delete.append(key)
+
+        for key in to_delete:
+            user_sessions.pop(key, None)
+
+        if to_delete:
+            logger.info("🧹 WarehouseSession: очищено %s старых сессий", len(to_delete))
+
+        return len(to_delete)
+
+    @staticmethod
     def get_session(session_key: Hashable) -> Dict[str, Any]:
+        # Лёгкая авто-очистка при любом обращении
+        WarehouseSession.purge_expired(24)
+
         if session_key not in user_sessions:
             user_sessions[session_key] = {
                 "items": [],

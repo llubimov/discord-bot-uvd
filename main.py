@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 # ========== НАСТРОЙКИ БОТА ==========
 intents = discord.Intents.default()
-intents.message_content = True
+intents.message_content = Config.ENABLE_MESSAGE_CONTENT_INTENT
 intents.members = True
 
 bot = commands.Bot(command_prefix=Config.COMMAND_PREFIX, intents=intents)
@@ -291,7 +291,7 @@ async def on_ready():
     logger.info("=" * 60)
 
     # 1) База данных
-    init_db()
+    await asyncio.to_thread(init_db)
     logger.info("✅ База данных подключена")
 
     # 2) Синхронизация команд (только один раз)
@@ -342,14 +342,18 @@ async def on_ready():
 @bot.event
 async def on_message(message):
     """Обрабатывает входящие сообщения"""
-    await bot.process_commands(message)
-
     if message.author == bot.user:
         return
 
     if message.webhook_id:
+        if Config.WEBHOOK_ALLOWED_IDS and int(message.webhook_id) not in Config.WEBHOOK_ALLOWED_IDS:
+            return
+        if Config.WEBHOOK_ALLOWED_CHANNEL_IDS and message.channel.id not in Config.WEBHOOK_ALLOWED_CHANNEL_IDS:
+            return
         await webhook_handler.process_webhook(message)
+        return
 
+    await bot.process_commands(message)
 
 # ============================================================================
 # ЗАПУСК БОТА

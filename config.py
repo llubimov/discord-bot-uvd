@@ -33,6 +33,13 @@ def _parse_int_list(raw: str) -> list[int]:
 
     return result
 
+def _env_bool(name: str, default: bool = False) -> bool:
+    """Безопасно читает bool из .env"""
+    raw = str(os.getenv(name, "")).strip().lower()
+    if not raw:
+        return default
+
+    return raw in {"1", "true", "yes", "y", "on", "да"}
 
 def _parse_prefixed_int_list(prefix: str) -> list[int]:
     """
@@ -195,6 +202,7 @@ class Config:
 
     GUILD_ID = _env_int("GUILD_ID", 0)
     COMMAND_PREFIX = "!"
+    ENABLE_MESSAGE_CONTENT_INTENT = _env_bool("ENABLE_MESSAGE_CONTENT_INTENT", True)
     LOG_FILE = "bot.log"
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO"))
@@ -283,13 +291,13 @@ class Config:
         "Младший Сержант → Сержант",
     ]
 
-    # Аудит
-    AUDIT_FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLSf3LdXQWbYj9IEd5lEgoRmN3Hc5bblJSlefnzI8URsfdumapQ/formResponse"
-    AUDIT_FIELD_OFFICER = "entry.1074962427"
-    AUDIT_FIELD_TARGET_ID = "entry.70770719"
-    AUDIT_FIELD_ACTION = "entry.1847499318"
-    AUDIT_FIELD_RANK = "entry.1635379052"
-    AUDIT_FIELD_REASON_LINK = "entry.268051623"
+    # Аудит (вынести в .env; если не задано — внешний аудит отключён)
+    AUDIT_FORM_URL = os.getenv("AUDIT_FORM_URL", "").strip()
+    AUDIT_FIELD_OFFICER = os.getenv("AUDIT_FIELD_OFFICER", "").strip()
+    AUDIT_FIELD_TARGET_ID = os.getenv("AUDIT_FIELD_TARGET_ID", "").strip()
+    AUDIT_FIELD_ACTION = os.getenv("AUDIT_FIELD_ACTION", "").strip()
+    AUDIT_FIELD_RANK = os.getenv("AUDIT_FIELD_RANK", "").strip()
+    AUDIT_FIELD_REASON_LINK = os.getenv("AUDIT_FIELD_REASON_LINK", "").strip()
 
     ACTION_ACCEPTED = "Принят"
     ACTION_FIRED = "Уволен"
@@ -304,6 +312,10 @@ class Config:
     MAX_REASON_LENGTH = 500
     MAX_RANK_LENGTH = 30
     STATIC_ID_LENGTH = 6
+
+    # Webhook allowlist (если пусто — разрешаем все, для обратной совместимости)
+    WEBHOOK_ALLOWED_IDS = _parse_int_list(os.getenv("WEBHOOK_ALLOWED_IDS", ""))
+    WEBHOOK_ALLOWED_CHANNEL_IDS = _parse_int_list(os.getenv("WEBHOOK_ALLOWED_CHANNEL_IDS", ""))
 
     NAME_PATTERN = r"^[а-яА-Яa-zA-Z\- ]+$"
     RANK_PATTERN = r"^[а-яА-Яa-zA-Z\s\-\.]+$"

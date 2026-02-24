@@ -162,8 +162,21 @@ class RequestView(View):
                     )
 
                     view = ExamView(timeout_seconds=Config.EXAM_BUTTON_TIMEOUT)
-                    msg = await member.send(embed=embed, view=view)
-                    await view.start_timer(msg, member.id)
+                    try:
+                        msg = await member.send(embed=embed, view=view)
+                        await view.start_timer(msg, member.id)
+                    except discord.Forbidden:
+                        logger.warning("Не удалось отправить ЛС с экзаменом пользователю %s (DM закрыты)", member.id)
+                        await interaction.followup.send(
+                            f"⚠️ Заявка принята, но не удалось отправить ЛС пользователю {member.mention}.",
+                            ephemeral=True
+                        )
+                    except discord.HTTPException as e:
+                        logger.warning("HTTP ошибка отправки ЛС с экзаменом пользователю %s: %s", member.id, e)
+                        await interaction.followup.send(
+                            f"⚠️ Заявка принята, но ЛС пользователю {member.mention} временно не доставлено.",
+                            ephemeral=True
+                        )
 
                 # Обновление embed
                 embed = copy_embed(interaction.message.embeds[0])

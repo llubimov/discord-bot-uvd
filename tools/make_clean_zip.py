@@ -1,40 +1,20 @@
-"""
-Кроссплатформенная сборка "чистого" ZIP-архива проекта:
-- нормализует пути в ZIP (всегда forward slashes: dir/file.py)
-- исключает мусор (__pycache__, .venv, .env, логи, архивы)
-"""
-
-from __future__ import annotations
-
-import os
-import fnmatch
-import zipfile
+# tools/make_clean_zip.py
+import os, fnmatch, zipfile
 from datetime import datetime
 from pathlib import Path
 
-EXCLUDE_DIRS = {
-    ".git", ".idea", ".vscode",
-    "__pycache__", ".pytest_cache",
-    ".venv", "venv", "env",
-    "tmp", "temp", "build", "dist",
-}
-
-EXCLUDE_PATTERNS = [
-    "*.pyc", "*.pyo", "*.pyd",
-    "*.log",
-    "*.zip", "*.rar", "*.7z",
-    ".env",
-]
-
+# Папка проекта (корень репозитория)
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
+EXCLUDE_DIRS = {".git", "__pycache__", ".venv", "venv", "build", "dist"}
+EXCLUDE_PATTERNS = ["*.pyc", "*.log", ".env"]
+
 def is_excluded(path: Path) -> bool:
-    parts = set(path.parts)
-    if parts & EXCLUDE_DIRS:
+    # Исключаем служебные каталоги и файлы
+    if any(part in EXCLUDE_DIRS for part in path.parts):
         return True
-    for pat in EXCLUDE_PATTERNS:
-        if fnmatch.fnmatch(path.name, pat):
-            return True
+    if any(fnmatch.fnmatch(path.name, pat) for pat in EXCLUDE_PATTERNS):
+        return True
     return False
 
 def build_zip() -> Path:
@@ -42,18 +22,12 @@ def build_zip() -> Path:
     out_name = f"discord-bot-uvd_clean_{ts}.zip"
     out_path = PROJECT_ROOT / out_name
 
-    files = [p for p in PROJECT_ROOT.rglob("*") if p.is_file() and not is_excluded(p)]
-    files.sort(key=lambda p: str(p.relative_to(PROJECT_ROOT)).lower())
-
+    files = [p for p in PROJECT_ROOT.rglob("*") if p.is_file() and not is_excluded(p.relative_to(PROJECT_ROOT))]
     with zipfile.ZipFile(out_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
-        for p in files:
-            rel = p.relative_to(PROJECT_ROOT)
-            # ZIP-стандарт: forward slashes
-            arcname = rel.as_posix()
-            zf.write(p, arcname)
-
-    return out_path
+        for file in files:
+            rel_path = file.relative_to(PROJECT_ROOT).as_posix()
+            zf.write(file, rel_path)
+    print(f"[OK] Собран чистый архив: {out_path}")
 
 if __name__ == "__main__":
-    out = build_zip()
-    print(f"[OK] Created: {out}")
+    build_zip()

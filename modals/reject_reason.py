@@ -62,6 +62,7 @@ class RejectReasonModal(Modal, title='отклонение заявки'):
             # 🔥 ПОЛНОСТЬЮ УБИРАЕМ КНОПКИ (view=None)
             await message.edit(embed=embed, view=None)
 
+            dm_warning = None
             if member:
                 try:
                     notification = discord.Embed(
@@ -74,13 +75,15 @@ class RejectReasonModal(Modal, title='отклонение заявки'):
                     notification.add_field(name="отклонил", value=interaction.user.mention, inline=True)
                     await member.send(embed=notification)
                 except discord.Forbidden:
-                    await interaction.followup.send(f"⚠️ не удалось отправить уведомление пользователю {member.mention}", ephemeral=True)
+                    dm_warning = f"⚠️ не удалось отправить уведомление пользователю {member.mention}"
 
             if self.message_id in active_requests:
                 del active_requests[self.message_id]
                 await asyncio.to_thread(delete_request, 'requests', self.message_id)
 
             await interaction.response.send_message(f"✅ заявка отклонена. причина: {reason}", ephemeral=True)
+            if dm_warning:
+                await interaction.followup.send(dm_warning, ephemeral=True)
             logger.info(f"Заявка {self.message_id} отклонена сотрудником {interaction.user.id}")
 
         except Exception as e:

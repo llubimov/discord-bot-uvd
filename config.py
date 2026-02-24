@@ -205,7 +205,7 @@ class Config:
     ENABLE_MESSAGE_CONTENT_INTENT = _env_bool("ENABLE_MESSAGE_CONTENT_INTENT", True)
     LOG_FILE = "bot.log"
     LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO"))
+    LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
 
     # База данных
     DB_PATH = os.getenv("DB_PATH", "").strip()

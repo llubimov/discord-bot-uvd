@@ -208,7 +208,6 @@ class WarehouseRequestView(View):
                     )
                     return
 
-                # Аудит
                 try:
                     audit = WarehouseAudit(interaction.client)
                     await audit.log_issue(

@@ -39,7 +39,7 @@ class FiringRejectReasonModal(BaseRejectModal):
         return "firing_requests"
 
     def get_notification_title(self):
-        return "❌ рапорт об увольнении отклонен"
+        return "❌ Рапорт об увольнении отклонён"
 
     def get_item_name(self):
         return "рапорт"

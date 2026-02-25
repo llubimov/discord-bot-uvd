@@ -13,15 +13,15 @@ from constants import StatusValues
 
 logger = logging.getLogger(__name__)
 
-class RejectReasonModal(Modal, title='отклонение заявки'):
+class RejectReasonModal(Modal, title='Отклонение заявки'):
     def __init__(self, user_id: int, request_type: RequestType, message_id: int):
         super().__init__()
         self.user_id = user_id
         self.request_type = request_type
         self.message_id = message_id
         self.reason = TextInput(
-            label='причина отказа',
-            placeholder='укажите причину отклонения заявки',
+            label='Причина отказа',
+            placeholder='Укажите причину отклонения заявки',
             max_length=Config.MAX_REASON_LENGTH,
             style=discord.TextStyle.paragraph,
             required=True
@@ -60,13 +60,13 @@ class RejectReasonModal(Modal, title='отклонение заявки'):
             if member:
                 try:
                     notification = discord.Embed(
-                        title="❌ заявка отклонена",
+                        title="❌ Заявка отклонена",
                         color=discord.Color.red(),
-                        description=f"**{interaction.guild.name}**\n\nваша заявка была отклонена.",
+                        description=f"**{interaction.guild.name}**\n\nВаша заявка была отклонена.",
                         timestamp=interaction.created_at
                     )
-                    notification.add_field(name="причина", value=reason, inline=False)
-                    notification.add_field(name="отклонил", value=interaction.user.mention, inline=True)
+                    notification.add_field(name="Причина", value=reason, inline=False)
+                    notification.add_field(name="Отклонил", value=interaction.user.mention, inline=True)
                     await member.send(embed=notification)
                 except discord.Forbidden:
                     dm_warning = f"⚠️ не удалось отправить уведомление пользователю {member.mention}"
@@ -75,7 +75,7 @@ class RejectReasonModal(Modal, title='отклонение заявки'):
                 del active_requests[self.message_id]
                 await asyncio.to_thread(delete_request, 'requests', self.message_id)
 
-            await interaction.response.send_message(f"✅ заявка отклонена. причина: {reason}", ephemeral=True)
+            await interaction.response.send_message(f"✅ Заявка отклонена. Причина: {reason}", ephemeral=True)
             if dm_warning:
                 await interaction.followup.send(dm_warning, ephemeral=True)
             logger.info(f"Заявка {self.message_id} отклонена сотрудником {interaction.user.id}")

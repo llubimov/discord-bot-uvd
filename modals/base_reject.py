@@ -1,7 +1,5 @@
 """
-=====================================================
-БАЗОВЫЙ КЛАСС ДЛЯ ВСЕХ REJECT МОДАЛОК
-=====================================================
+Базовый класс для модалок отклонения заявок.
 """
 
 import discord
@@ -19,21 +17,7 @@ logger = logging.getLogger(__name__)
 
 
 class BaseRejectModal(Modal):
-    """
-    Базовый класс для всех модалок отклонения.
-
-    Наследники должны определить:
-    - get_staff_role_id()
-    - get_request_data()
-    - get_view_class()
-    - get_state_dict()
-    - get_table_name()
-    - get_notification_title()
-    - get_item_name()
-
-    Опционально:
-    - try_restore_missing_request() — попытка восстановить заявку, если её нет в state/БД
-    """
+    """Базовый класс для модалок отклонения."""
 
     def __init__(self, user_id: int, message_id: int, **kwargs):
         super().__init__(title=self.get_modal_title())
@@ -42,7 +26,7 @@ class BaseRejectModal(Modal):
         self.additional_data = kwargs
 
         self.reason = TextInput(
-            label="причина отказа",
+            label="Причина отказа",
             placeholder="укажите причину отклонения",
             max_length=Config.MAX_REASON_LENGTH,
             style=discord.TextStyle.paragraph,
@@ -61,10 +45,6 @@ class BaseRejectModal(Modal):
         raise NotImplementedError
 
     async def try_restore_missing_request(self, interaction: discord.Interaction) -> bool:
-        """
-        Опциональный fallback для старых/осиротевших записей.
-        Наследники могут переопределить и вернуть True, если восстановление удалось.
-        """
         return False
 
     def get_view_class(self):
@@ -83,7 +63,6 @@ class BaseRejectModal(Modal):
         return "заявка"
 
     async def get_view_instance(self, interaction: discord.Interaction, request_data: dict):
-        """Создать экземпляр View с отключенными кнопками"""
         view_class = self.get_view_class()
 
         # Создаем экземпляр view с нужными параметрами
@@ -133,7 +112,6 @@ class BaseRejectModal(Modal):
         return view
 
     async def on_submit(self, interaction: discord.Interaction):
-        """Общая логика для всех отклонений"""
         try:
             async with action_lock(self.message_id, f"отклонение {self.get_item_name()}"):
                 # 1) Проверка прав
@@ -237,18 +215,24 @@ class BaseRejectModal(Modal):
                 member = interaction.guild.get_member(self.user_id) if interaction.guild else None
                 if member:
                     try:
+                        item_name = self.get_item_name()
+                        # Рапорт — мужской род (ваш/был отклонён), заявка — женский (ваша/была отклонена)
+                        if "рапорт" in item_name.lower():
+                            dm_desc = f"**{interaction.guild.name}**\n\nВаш {item_name} был отклонён."
+                        else:
+                            dm_desc = f"**{interaction.guild.name}**\n\nВаша {item_name} была отклонена."
                         dm_embed = discord.Embed(
                             title=self.get_notification_title(),
                             color=discord.Color.light_gray(),
-                            description=f"**{interaction.guild.name}**\n\nваша {self.get_item_name()} была отклонена.",
+                            description=dm_desc,
                             timestamp=interaction.created_at,
                         )
-                        dm_embed.add_field(name="причина", value=reason, inline=False)
-                        dm_embed.add_field(name="отклонил", value=interaction.user.mention, inline=True)
+                        dm_embed.add_field(name="Причина", value=reason, inline=False)
+                        dm_embed.add_field(name="Отклонил", value=interaction.user.mention, inline=True)
 
                         if self.get_table_name() == "promotion_requests":
                             dm_embed.add_field(
-                                name="звание",
+                                name="Звание",
                                 value=self.additional_data.get("new_rank", "") or "—",
                                 inline=True,
                             )
@@ -267,8 +251,10 @@ class BaseRejectModal(Modal):
                 await asyncio.to_thread(delete_request, self.get_table_name(), self.message_id)
 
                 # 8) Ответ
+                _item = self.get_item_name()
+                _end = "отклонён. Причина:" if "рапорт" in _item.lower() else "отклонена. Причина:"
                 await interaction.response.send_message(
-                    f"✅ {self.get_item_name()} отклонена. причина: {reason}",
+                    f"✅ {_item.capitalize()} {_end} {reason}",
                     ephemeral=True,
                 )
 

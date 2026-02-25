@@ -37,7 +37,7 @@ class PromotionRejectReasonModal(BaseRejectModal):
         return "promotion_requests"
 
     def get_notification_title(self):
-        return "❌ рапорт на повышение отклонен"
+        return "❌ Рапорт на повышение отклонён"
 
     def get_item_name(self):
         return "рапорт"

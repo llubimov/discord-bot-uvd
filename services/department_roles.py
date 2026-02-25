@@ -1,6 +1,3 @@
-"""
-Маппинг отделов на роли начальников/замов и роли отделов/рангов для заявок на перевод.
-"""
 from __future__ import annotations
 
 import discord
@@ -47,6 +44,39 @@ def get_dept_and_rank_roles(guild: discord.Guild, dept: str) -> tuple[list[disco
     dept_roles = [guild.get_role(dept_rid)] if dept_rid and guild.get_role(dept_rid) else []
     rank_roles = [r for rid in rank_rids if (r := guild.get_role(rid))]
     return dept_roles, rank_roles
+
+
+def get_all_dept_and_rank_roles(guild: discord.Guild) -> tuple[list[discord.Role], list[discord.Role]]:
+    all_dept_roles: list[discord.Role] = []
+    all_rank_roles: list[discord.Role] = []
+
+    for dept in ("grom", "pps", "osb", "orls", "academy"):
+        dept_roles, rank_roles = get_dept_and_rank_roles(guild, dept)
+        all_dept_roles.extend(dept_roles)
+        all_rank_roles.extend(rank_roles)
+
+    def _unique(roles: list[discord.Role]) -> list[discord.Role]:
+        seen = set()
+        result: list[discord.Role] = []
+        for r in roles:
+            if not r:
+                continue
+            if r.id in seen:
+                continue
+            seen.add(r.id)
+            result.append(r)
+        return result
+
+    return _unique(all_dept_roles), _unique(all_rank_roles)
+
+
+def get_base_rank_role(guild: discord.Guild, dept: str) -> discord.Role | None:
+    rank_rids = get_rank_role_ids(dept)
+    for rid in rank_rids:
+        role = guild.get_role(rid)
+        if role:
+            return role
+    return None
 
 
 def get_approval_label_source(source_dept: str) -> str:

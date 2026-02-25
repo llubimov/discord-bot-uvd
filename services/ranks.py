@@ -1,6 +1,6 @@
 import logging
 import re
-from typing import Dict, Tuple, Optional
+from typing import Dict, Tuple, Optional, Set
 
 import discord
 from config import Config
@@ -30,6 +30,13 @@ def _canon_transition_key(key: str) -> Optional[Tuple[str, str]]:
     return a, b
 
 
+def _parse_role_id(role_id) -> Optional[int]:
+    try:
+        return int(role_id)
+    except Exception:
+        return None
+
+
 def build_normalized_rank_mapping() -> Dict[Tuple[str, str], int]:
     raw = getattr(Config, "RANK_ROLE_MAPPING", {}) or {}
     normalized: Dict[Tuple[str, str], int] = {}
@@ -39,9 +46,8 @@ def build_normalized_rank_mapping() -> Dict[Tuple[str, str], int]:
         if canon is None:
             continue
 
-        try:
-            rid = int(role_id)
-        except Exception:
+        rid = _parse_role_id(role_id)
+        if rid is None:
             continue
 
         if canon in normalized and normalized[canon] != rid:
@@ -56,33 +62,88 @@ def build_normalized_rank_mapping() -> Dict[Tuple[str, str], int]:
     return normalized
 
 
-def find_role_id_for_transition(transition: str) -> Optional[int]:
-    canon = _canon_transition_key(transition)
-    if not canon:
-        return None
-    mapping = build_normalized_rank_mapping()
-    return mapping.get(canon)
+def _build_new_rank_to_role_id() -> Dict[str, int]:
+    raw = getattr(Config, "RANK_ROLE_MAPPING", {}) or {}
+    result: Dict[str, int] = {}
 
+    for raw_key, role_id in raw.items():
+        rid = _parse_role_id(role_id)
+        if rid is None:
+            continue
+        key = str(raw_key).strip()
+        canon = _canon_transition_key(key)
+        if canon:
+            new_canon = canon[1]
+            if new_canon in result and result[new_canon] != rid:
+                logger.warning(
+                    "⚠️ RANK_ROLE_MAPPING: дубликат нового звания '%s' (роль %s и %s). Оставляем первый.",
+                    new_canon, result[new_canon], rid
+                )
+            else:
+                result[new_canon] = rid
+        else:
+            key_canon = _canon_rank(key)
+            if key_canon:
+                if key_canon in result and result[key_canon] != rid:
+                    logger.warning(
+                        "⚠️ RANK_ROLE_MAPPING: дубликат звания '%s' (роль %s и %s). Оставляем первый.",
+                        key_canon, result[key_canon], rid
+                    )
+                else:
+                    result[key_canon] = rid
+
+    return result
+
+
+def find_role_id_for_transition(transition: str) -> Optional[int]:
+    if not (transition or "").strip():
+        return None
+
+    canon = _canon_transition_key(transition)
+    if canon:
+        mapping = build_normalized_rank_mapping()
+        rid = mapping.get(canon)
+        if rid is not None:
+            return rid
+
+    new_rank_map = _build_new_rank_to_role_id()
+    return new_rank_map.get(_canon_rank(transition))
 
 def parse_transition_to_new_rank(transition: str):
     canon = _canon_transition_key(transition)
-    if not canon:
-        return None
-    return canon[1]
+    if canon:
+        return canon[1]
+    return _canon_rank(transition) or None
 
 
 def get_all_rank_role_ids_from_mapping():
-    mapping = build_normalized_rank_mapping()
-    return set(mapping.values())
+    ids_from_transitions = set(build_normalized_rank_mapping().values())
+    ids_from_new_rank = set(_build_new_rank_to_role_id().values())
+    return ids_from_transitions | ids_from_new_rank
+
+
+def get_all_rank_names_from_mapping() -> Set[str]:
+    names: Set[str] = set()
+    raw = getattr(Config, "RANK_ROLE_MAPPING", {}) or {}
+    for key in raw:
+        text = str(key or "").strip()
+        canon = _canon_transition_key(text)
+        if canon:
+            names.add(canon[0])
+            names.add(canon[1])
+        else:
+            c = _canon_rank(text)
+            if c:
+                names.add(c)
+    return names
 
 
 def _build_role_id_to_display_name() -> Dict[int, str]:
     raw = getattr(Config, "RANK_ROLE_MAPPING", {}) or {}
     result: Dict[int, str] = {}
     for raw_key, role_id in raw.items():
-        try:
-            rid = int(role_id)
-        except Exception:
+        rid = _parse_role_id(role_id)
+        if rid is None:
             continue
         key = str(raw_key).strip()
         for sep in ("->", "→", "➡", "⇒"):
@@ -91,6 +152,9 @@ def _build_role_id_to_display_name() -> Dict[int, str]:
                 if part:
                     result[rid] = part[0].upper() + part[1:] if len(part) > 1 else part.upper()
                 break
+        else:
+            if key:
+                result[rid] = key[0].upper() + key[1:] if len(key) > 1 else key.upper()
     return result
 
 

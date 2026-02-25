@@ -54,7 +54,7 @@ def _build_firing_embed(
 
     embed = discord.Embed(title=title, description=body, color=discord.Color.red())
     embed.add_field(name=FieldNames.OFFICER, value=f"<@!{discord_id}>", inline=True)
-    embed.add_field(name=FieldNames.STATUS, value="⏳ ожидает рассмотрения", inline=True)
+    embed.add_field(name=FieldNames.STATUS, value="⏳ Ожидает рассмотрения", inline=True)
     if is_auto_report:
         embed.add_field(
             name="Примечание",

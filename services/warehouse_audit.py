@@ -26,14 +26,11 @@ class WarehouseAudit:
                 logger.error(f"Канал аудита {self.audit_channel_id} не найден")
                 return
             
-            # Создаем embed для аудита
             embed = discord.Embed(
                 title="📦 ВЫДАЧА СО СКЛАДА",
                 color=discord.Color.green(),
                 timestamp=datetime.now()
             )
-            
-            # Кто выдал (только упоминание)
             embed.add_field(
                 name="👮 Выдал",
                 value=staff_member.mention,

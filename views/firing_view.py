@@ -199,25 +199,30 @@ class FiringView(View):
                         await interaction.followup.send("❌ Ошибка Discord API при выдаче роли.", ephemeral=True)
                         return
 
-                # Меняем ник
+                # Меняем ник: убираем префикс отдела/курсанта из full_name (мог прийти «ППС | Имя Фамилия»), ставим только «Уволен | Имя Фамилия»
+                name_for_nick = (full_name or "").strip()
+                if " | " in name_for_nick:
+                    name_for_nick = name_for_nick.split(" | ", 1)[-1].strip()
+                if not name_for_nick:
+                    name_for_nick = full_name or "Сотрудник"
+                prefix = (Config.FIRING_NICKNAME_PREFIX or "Уволен |").strip()
                 try:
-                    parts = full_name.split()
+                    parts = name_for_nick.split(None, 1)
                     if len(parts) >= 2:
-                        new_nick = f"{Config.FIRING_NICKNAME_PREFIX} {parts[0]} {parts[1]}"
+                        new_nick = f"{prefix} {parts[0]} {parts[1]}"
                     else:
-                        new_nick = f"{Config.FIRING_NICKNAME_PREFIX} {full_name}"
+                        new_nick = f"{prefix} {name_for_nick}"
                     await safe_discord_call(member.edit, nick=new_nick)
                 except discord.Forbidden:
                     logger.warning("Нет прав на смену ника пользователя %s", member.id)
-                    new_nick = f"{Config.FIRING_NICKNAME_PREFIX} {full_name}"
+                    new_nick = f"{prefix} {name_for_nick}"
                 except discord.HTTPException as e:
                     logger.warning("HTTP ошибка при смене ника пользователя %s: %s", member.id, e, exc_info=True)
-                    new_nick = f"{Config.FIRING_NICKNAME_PREFIX} {full_name}"
+                    new_nick = f"{prefix} {name_for_nick}"
                 except Exception as e:
                     logger.error("Ошибка при смене ника: %s", e, exc_info=True)
-                    new_nick = f"{Config.FIRING_NICKNAME_PREFIX} {full_name}"
+                    new_nick = f"{prefix} {name_for_nick}"
 
-                # Аудит
                 try:
                     await send_to_audit(
                         interaction,
@@ -237,14 +242,14 @@ class FiringView(View):
                 dm_warning = None
                 try:
                     embed = discord.Embed(
-                        title="✅ рапорт об увольнении удовлетворен",
+                        title="✅ Рапорт об увольнении удовлетворён",
                         color=discord.Color.red(),
                         description=f"**{interaction.guild.name}**\n\nВаш рапорт об увольнении был одобрен.",
                         timestamp=interaction.created_at
                     )
-                    embed.add_field(name="ваш новый ник", value=f"`{new_nick}`", inline=False)
-                    embed.add_field(name="уволил", value=interaction.user.mention, inline=True)
-                    embed.add_field(name="причина", value=request_data.get("reason", "псж"), inline=False)
+                    embed.add_field(name="Ваш новый ник", value=f"`{new_nick}`", inline=False)
+                    embed.add_field(name="Уволил", value=interaction.user.mention, inline=True)
+                    embed.add_field(name="Причина", value=request_data.get("reason", "псж"), inline=False)
                     await member.send(embed=embed)
                 except discord.Forbidden:
                     dm_warning = f"⚠️ Не удалось отправить уведомление пользователю {member.mention}"
@@ -273,14 +278,7 @@ class FiringView(View):
                     await interaction.followup.send("❌ Ошибка Discord API при обновлении рапорта.", ephemeral=True)
                     return
 
-                # Сообщение в канал: сотрудник уволен, роль удалена
-                try:
-                    await message.channel.send(
-                        f"Сотрудник {member.mention} уволен. Роль удалена.",
-                        allowed_mentions=discord.AllowedMentions.none(),
-                    )
-                except Exception as e:
-                    logger.warning("Не удалось отправить сообщение об увольнении в канал: %s", e)
+                # Сообщение в канал не отправляем — рапорт уже обновлён, лишняя запись не нужна
 
                 # Чистим state + БД
                 active_firing_requests.pop(interaction.message.id, None)

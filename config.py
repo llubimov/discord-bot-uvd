@@ -58,11 +58,39 @@ def _parse_prefixed_int_list(prefix: str) -> list[int]:
     return [value for _, value in pairs]
 
 
+def _parse_prefixed_int_list_allow_comma(prefix: str) -> list[int]:
+    pairs: list[tuple[str, int]] = []
+
+    for key, value in os.environ.items():
+        if not key.startswith(prefix):
+            continue
+
+        raw = str(value).strip()
+        for part in raw.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                pairs.append((key, int(part)))
+            except ValueError:
+                continue
+
+    pairs.sort(key=lambda x: x[0])
+    return [v for _, v in pairs]
+
+
 def _get_list_from_env(prefix: str, legacy_var: str) -> list[int]:
     prefixed = _parse_prefixed_int_list(prefix)
     if prefixed:
         return prefixed
 
+    return _parse_int_list(os.getenv(legacy_var, ""))
+
+
+def _get_rank_list_from_env(prefix: str, legacy_var: str) -> list[int]:
+    prefixed = _parse_prefixed_int_list_allow_comma(prefix)
+    if prefixed:
+        return prefixed
     return _parse_int_list(os.getenv(legacy_var, ""))
 
 
@@ -176,10 +204,10 @@ class Config:
         raise ValueError("❌ Токен не найден! Создайте файл .env с DISCORD_BOT_TOKEN=ваш_токен")
 
     GUILD_ID = _env_int("GUILD_ID", 0)
-    COMMAND_PREFIX = "!"
+    COMMAND_PREFIX = _env_str("COMMAND_PREFIX", "!")
     ENABLE_MESSAGE_CONTENT_INTENT = _env_bool("ENABLE_MESSAGE_CONTENT_INTENT", True)
-    LOG_FILE = "bot.log"
-    LOG_FORMAT = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    LOG_FILE = _env_str("LOG_FILE", "bot.log")
+    LOG_FORMAT = _env_str("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
 
     # База данных
@@ -243,11 +271,11 @@ class Config:
     ROLE_DEPT_OSB = _env_int("ROLE_DEPT_OSB", 0)
     ROLE_DEPT_ORLS = _env_int("ROLE_DEPT_ORLS", 0)
 
-    # Ранги отделов (списки: ROLE_RANK_GROM_01, ROLE_RANK_GROM_02 и т.д.; один ранг — ROLE_RANK_GROM_01)
-    ROLE_RANK_GROM = _get_list_from_env("ROLE_RANK_GROM_", "ROLE_RANK_GROM")
-    ROLE_RANK_PPS = _get_list_from_env("ROLE_RANK_PPS_", "ROLE_RANK_PPS")
-    ROLE_RANK_OSB = _get_list_from_env("ROLE_RANK_OSB_", "ROLE_RANK_OSB")
-    ROLE_RANK_ORLS = _get_list_from_env("ROLE_RANK_ORLS_", "ROLE_RANK_ORLS")
+    # Ранги отделов (списки: ROLE_RANK_GROM_01=id или id1,id2,…, ROLE_RANK_GROM_02=…; допускаются несколько ID через запятую в одном ключе)
+    ROLE_RANK_GROM = _get_rank_list_from_env("ROLE_RANK_GROM_", "ROLE_RANK_GROM")
+    ROLE_RANK_PPS = _get_rank_list_from_env("ROLE_RANK_PPS_", "ROLE_RANK_PPS")
+    ROLE_RANK_OSB = _get_rank_list_from_env("ROLE_RANK_OSB_", "ROLE_RANK_OSB")
+    ROLE_RANK_ORLS = _get_rank_list_from_env("ROLE_RANK_ORLS_", "ROLE_RANK_ORLS")
 
     # Роль Академии (заявка «из Академии» — автодобро ППС, для ГРОМ/ОРЛС/ОСБ можно отклонить)
     ROLE_ACADEMY = _env_int("ROLE_ACADEMY", 0)
@@ -256,7 +284,9 @@ class Config:
     ROLE_DEPT_ACADEMY = _env_int("ROLE_DEPT_ACADEMY", 0)
     ROLE_RANK_ACADEMY = _get_list_from_env("ROLE_RANK_ACADEMY_", "ROLE_RANK_ACADEMY")
 
-    # Каналы повышений (новый формат: PROMOTION_CH_01=channel_id:role_id; старый PROMOTION_CHANNELS тоже поддерживается)
+    ROLE_PASSED_ACADEMY = _env_int("ROLE_PASSED_ACADEMY", 0) or ROLE_ACADEMY
+
+    # Каналы повышений
     PROMOTION_CHANNELS = _parse_prefixed_channel_role_map("PROMOTION_CH_")
     if not PROMOTION_CHANNELS:
         PROMOTION_CHANNELS = _parse_promotion_channels_legacy(os.getenv("PROMOTION_CHANNELS", ""))
@@ -310,7 +340,7 @@ class Config:
         "Младший Сержант → Сержант",
     ]
 
-    # Аудит (вынести в .env; если не задано — внешний аудит отключён)
+    # Аудит
     AUDIT_FORM_URL = os.getenv("AUDIT_FORM_URL", "").strip()
     AUDIT_FIELD_OFFICER = os.getenv("AUDIT_FIELD_OFFICER", "").strip()
     AUDIT_FIELD_TARGET_ID = os.getenv("AUDIT_FIELD_TARGET_ID", "").strip()
@@ -318,23 +348,32 @@ class Config:
     AUDIT_FIELD_RANK = os.getenv("AUDIT_FIELD_RANK", "").strip()
     AUDIT_FIELD_REASON_LINK = os.getenv("AUDIT_FIELD_REASON_LINK", "").strip()
 
-    ACTION_ACCEPTED = "Принят"
-    ACTION_FIRED = "Уволен"
-    ACTION_PROMOTED = "Повышен"
+    ACTION_ACCEPTED = _env_str("AUDIT_ACTION_ACCEPTED", "Принят")
+    ACTION_FIRED = _env_str("AUDIT_ACTION_FIRED", "Уволен")
+    ACTION_PROMOTED = _env_str("AUDIT_ACTION_PROMOTED", "Повышен")
 
-    RANK_PRIVATE = "Рядовой полиции"
-    RANK_FIRED = "Уволен"
+    RANK_PRIVATE = _env_str("RANK_PRIVATE", "Рядовой полиции")
+    RANK_FIRED = _env_str("RANK_FIRED", "Уволен")
 
-    # Валидация
-    MAX_NAME_LENGTH = 30
-    MIN_NAME_LENGTH = 2
-    MAX_REASON_LENGTH = 500
-    MAX_RANK_LENGTH = 30
-    STATIC_ID_LENGTH = 6
+    # Валидация (все лимиты из .env)
+    MAX_NAME_LENGTH = _env_int("MAX_NAME_LENGTH", 30)
+    MIN_NAME_LENGTH = _env_int("MIN_NAME_LENGTH", 2)
+    MAX_REASON_LENGTH = _env_int("MAX_REASON_LENGTH", 500)
+    MAX_RANK_LENGTH = _env_int("MAX_RANK_LENGTH", 30)
+    STATIC_ID_LENGTH = _env_int("STATIC_ID_LENGTH", 6)
+    # Возраст в заявках в подразделения (ГРОМ, ППС, ОСБ, ОРЛС)
+    DEPT_APPLY_AGE_MIN = _env_int("DEPT_APPLY_AGE_MIN", 10)
+    DEPT_APPLY_AGE_MAX = _env_int("DEPT_APPLY_AGE_MAX", 100)
+    # Лимит полей в embed (Discord 25)
+    MAX_EMBED_FIELDS = _env_int("MAX_EMBED_FIELDS", 25)
 
     # Webhook allowlist (если пусто — разрешаем все, для обратной совместимости)
     WEBHOOK_ALLOWED_IDS = _parse_int_list(os.getenv("WEBHOOK_ALLOWED_IDS", ""))
     WEBHOOK_ALLOWED_CHANNEL_IDS = _parse_int_list(os.getenv("WEBHOOK_ALLOWED_CHANNEL_IDS", ""))
+
+    # Ссылки на изображения для экзамена/приказа (если пусто — используются дефолты из constants.ExamMessages)
+    EXAM_HERB_URL = os.getenv("EXAM_HERB_URL", "").strip()
+    EXAM_SEAL_URL = os.getenv("EXAM_SEAL_URL", "").strip()
 
     NAME_PATTERN = r"^[а-яА-Яa-zA-Z\- ]+$"
     RANK_PATTERN = r"^[а-яА-Яa-zA-Z\s\-\.]+$"

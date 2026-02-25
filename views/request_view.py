@@ -41,16 +41,16 @@ class RequestView(View):
                 return False
         return True
 
-    @discord.ui.button(label="✅ принять", style=discord.ButtonStyle.success, custom_id="accept")
+    @discord.ui.button(label="✅ Принять", style=discord.ButtonStyle.success, custom_id="accept")
     async def accept_button(self, interaction: discord.Interaction, button: Button):
         await self.handle_accept(interaction)
 
-    @discord.ui.button(label="❌ отклонить", style=discord.ButtonStyle.danger, custom_id="reject")
+    @discord.ui.button(label="❌ Отклонить", style=discord.ButtonStyle.danger, custom_id="reject")
     async def reject_button(self, interaction: discord.Interaction, button: Button):
         modal = RejectReasonModal(user_id=self.user_id, request_type=self.request_type, message_id=interaction.message.id)
         await interaction.response.send_modal(modal)
 
-    @discord.ui.button(label="✏️ редактировать", style=discord.ButtonStyle.secondary, custom_id="edit")
+    @discord.ui.button(label="✏️ Редактировать", style=discord.ButtonStyle.secondary, custom_id="edit")
     async def edit_button(self, interaction: discord.Interaction, button: Button):
         embed = interaction.message.embeds[0]
         for field in embed.fields:
@@ -94,11 +94,11 @@ class RequestView(View):
                     interaction,
                     member,
                     Config.ACTION_ACCEPTED,
-                    "Рядовой полиции",
+                    Config.RANK_PRIVATE,
                     message_link
                 )
 
-                # Элитное приветствие для курсанта
+                # Сообщение в ЛС принятому курсанту
                 if self.request_type == RequestType.CADET:
                     from datetime import datetime
                     import random
@@ -107,58 +107,39 @@ class RequestView(View):
 
                     now = datetime.now()
                     report_id = f"УВД-{random.randint(1000, 9999)}"
+                    herb_url = (getattr(Config, "EXAM_HERB_URL", None) or "").strip() or ExamMessages.HERB_URL
+                    seal_url = (getattr(Config, "EXAM_SEAL_URL", None) or "").strip() or ExamMessages.SEAL_URL
+
+                    order_text = ExamMessages.WELCOME_TEXT.format(
+                        report_id=report_id,
+                        day=now.day,
+                        month=ExamMessages.MONTHS[now.month],
+                        year=now.year,
+                        name=self.validated_data["name"],
+                    )
 
                     embed = discord.Embed(
                         title=ExamMessages.WELCOME_TITLE,
-                        color=0x0B3B5B
+                        description=order_text,
+                        color=0x1E5F8C,
+                        timestamp=discord.utils.utcnow(),
                     )
-
-                    embed.set_thumbnail(url=ExamMessages.HERB_URL)
-
-                    embed.add_field(
-                        name="",
-                        value=(
-                            ExamMessages.WELCOME_HEADER +
-                            ExamMessages.WELCOME_TEXT.format(
-                                report_id=report_id,
-                                day=now.day,
-                                month=ExamMessages.MONTHS[now.month],
-                                year=now.year,
-                                name=self.validated_data['name']
-                            )
-                        ),
-                        inline=False
+                    embed.set_author(
+                        name=ExamMessages.WELCOME_SUBTITLE,
+                        icon_url=herb_url,
                     )
+                    embed.set_thumbnail(url=herb_url)
 
-                    embed.add_field(
-                        name="👤 Кандидат",
-                        value=f"```{self.validated_data['name']} {self.validated_data['surname']}```",
-                        inline=True
-                    )
+                    full_name = f"{self.validated_data['name']} {self.validated_data['surname']}"
+                    embed.add_field(name="👤 Кандидат", value=f"**{full_name}**", inline=True)
+                    embed.add_field(name="📋 Статус", value="**Курсант**", inline=True)
+                    embed.add_field(name="🆔 Номер рапорта", value=f"**{report_id}**", inline=True)
+                    embed.add_field(name="👮 Принял", value=interaction.user.mention, inline=False)
 
-                    embed.add_field(
-                        name="📋 Статус",
-                        value="```Курсант```",
-                        inline=True
-                    )
-
-                    embed.add_field(
-                        name="🆔 Номер",
-                        value=f"```{report_id.split('-')[1]}```",
-                        inline=True
-                    )
-
-                    embed.add_field(
-                        name="👮 Принял",
-                        value=interaction.user.mention,
-                        inline=False
-                    )
-
-                    embed.set_image(url=ExamMessages.SEAL_URL)
-
+                    embed.set_image(url=seal_url)
                     embed.set_footer(
-                        text="Управление Внутренних Дел • Кадровый департамент",
-                        icon_url=ExamMessages.HERB_URL
+                        text="Следующий шаг: перейдите в голосовой канал и нажмите кнопку ниже",
+                        icon_url=herb_url,
                     )
 
                     view = ExamView(timeout_seconds=Config.EXAM_BUTTON_TIMEOUT)

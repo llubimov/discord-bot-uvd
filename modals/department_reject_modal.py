@@ -12,7 +12,6 @@ from discord.ui import Modal, TextInput
 from config import Config
 from database import delete_department_transfer_request
 from state import active_department_transfers
-from constants import FieldNames
 from utils.embed_utils import copy_embed, update_embed_status
 
 logger = logging.getLogger(__name__)

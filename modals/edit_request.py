@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 
 class EditRequestModal(Modal):
     def __init__(self, user_id: int, request_type: RequestType, current_data: dict, message_id: int):
-        title = f"редактирование заявки - {request_type.get_title()}"
+        title = f"Редактирование заявки — {request_type.get_title()}"
         super().__init__(title=title)
         self.user_id = user_id
         self.request_type = request_type
@@ -25,22 +25,22 @@ class EditRequestModal(Modal):
         self.current_data = current_data or {}
 
         self.name = TextInput(
-            label="имя",
+            label="Имя",
             default=self.current_data.get("name", ""),
             max_length=Config.MAX_NAME_LENGTH,
             min_length=Config.MIN_NAME_LENGTH,
             required=True,
         )
         self.surname = TextInput(
-            label="фамилия",
+            label="Фамилия",
             default=self.current_data.get("surname", ""),
             max_length=Config.MAX_NAME_LENGTH,
             min_length=Config.MIN_NAME_LENGTH,
             required=True,
         )
         self.static_id = TextInput(
-            label="статик id",
-            placeholder="введите 6 цифр",
+            label="Статик ID",
+            placeholder="Введите 6 цифр",
             default=str(self.current_data.get("static_id", "")).replace("-", ""),
             max_length=10,
             min_length=Config.STATIC_ID_LENGTH,
@@ -52,7 +52,7 @@ class EditRequestModal(Modal):
 
         if request_type == RequestType.CADET:
             self.reason = TextInput(
-                label="причина",
+                label="Причина",
                 default=self.current_data.get("reason", ""),
                 max_length=Config.MAX_REASON_LENGTH,
                 style=discord.TextStyle.paragraph,
@@ -61,13 +61,13 @@ class EditRequestModal(Modal):
             self.add_item(self.reason)
         elif request_type == RequestType.TRANSFER:
             self.rank = TextInput(
-                label="звание",
+                label="Звание",
                 default=self.current_data.get("rank", ""),
                 max_length=Config.MAX_RANK_LENGTH,
                 required=True,
             )
             self.approval = TextInput(
-                label="одобрение",
+                label="Одобрение",
                 default=self.current_data.get("approval", ""),
                 max_length=Config.MAX_REASON_LENGTH,
                 style=discord.TextStyle.paragraph,
@@ -77,7 +77,7 @@ class EditRequestModal(Modal):
             self.add_item(self.approval)
         elif request_type == RequestType.GOV:
             self.approval = TextInput(
-                label="одобрение",
+                label="Одобрение",
                 default=self.current_data.get("approval", ""),
                 max_length=Config.MAX_REASON_LENGTH,
                 style=discord.TextStyle.paragraph,

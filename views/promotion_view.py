@@ -11,7 +11,12 @@ from utils.rate_limiter import apply_role_changes
 from utils.embed_utils import copy_embed, add_officer_field, update_embed_status
 from services.audit import send_to_audit
 from services.action_locks import action_lock
-from services.ranks import find_role_id_for_transition, get_all_rank_role_ids_from_mapping
+from services.ranks import (
+    find_role_id_for_transition,
+    get_all_rank_role_ids_from_mapping,
+    get_all_rank_names_from_mapping,
+    parse_transition_to_new_rank,
+)
 from database import delete_request
 from constants import StatusValues, FieldNames, WebhookPatterns
 
@@ -22,23 +27,7 @@ def _norm_text(value: str) -> str:
     return " ".join((value or "").strip().lower().split())
 
 
-def _collect_rank_names_from_mapping():
-    names = set()
-    raw = getattr(Config, "RANK_ROLE_MAPPING", {}) or {}
-    for key in raw.keys():
-        text = str(key or "")
-        parts = re.split(r"\s*(?:->|→|➡|⇒|=+>)\s*", text)
-        if len(parts) == 2:
-            old_rank = _norm_text(parts[0])
-            new_rank = _norm_text(parts[1])
-            if old_rank:
-                names.add(old_rank)
-            if new_rank:
-                names.add(new_rank)
-    return names
-
-
-def _is_rank_role_by_name(role_name: str, rank_names: set[str]) -> bool:
+def _is_rank_role_by_name(role_name: str, rank_names: set) -> bool:
     return _norm_text(role_name) in (rank_names or set())
 
 
@@ -66,11 +55,11 @@ class PromotionView(View):
             return False
         return True
 
-    @discord.ui.button(label="✅ одобрить повышение", style=discord.ButtonStyle.success, custom_id="promotion_accept")
+    @discord.ui.button(label="✅ Одобрить повышение", style=discord.ButtonStyle.success, custom_id="promotion_accept")
     async def accept_promotion_button(self, interaction: discord.Interaction, button: Button):
         await self.handle_accept(interaction)
 
-    @discord.ui.button(label="❌ отклонить рапорт", style=discord.ButtonStyle.secondary, custom_id="promotion_reject")
+    @discord.ui.button(label="❌ Отклонить рапорт", style=discord.ButtonStyle.secondary, custom_id="promotion_reject")
     async def reject_promotion_button(self, interaction: discord.Interaction, button: Button):
         from modals.promotion_reject_reason import PromotionRejectReasonModal
         modal = PromotionRejectReasonModal(
@@ -219,7 +208,7 @@ class PromotionView(View):
 
                 rank_role_ids = set(getattr(Config, "ALL_RANK_ROLE_IDS", []) or [])
                 rank_role_ids |= set(get_all_rank_role_ids_from_mapping())
-                rank_names = _collect_rank_names_from_mapping()
+                rank_names = get_all_rank_names_from_mapping()
 
                 roles_to_remove = []
                 for role in member.roles:
@@ -259,7 +248,6 @@ class PromotionView(View):
                 except Exception:
                     pass
 
-                # Аудит
                 rank_for_audit = self.new_rank
                 try:
                     await send_to_audit(
@@ -276,17 +264,50 @@ class PromotionView(View):
                 except Exception as e:
                     logger.warning("Promotion audit: ошибка user=%s: %s", member.id, e, exc_info=True)
 
+                # После кадрового аудита: при повышении до сержанта выдать роль «прошедший академию»
+                role_passed_academy_id = getattr(Config, "ROLE_PASSED_ACADEMY", 0) or 0
+                if not role_passed_academy_id:
+                    logger.debug("ROLE_PASSED_ACADEMY не задан в .env — роль «прошедший академию» не выдаётся")
+                if role_passed_academy_id:
+                    rank_transition = (request_data or {}).get("rank_transition") or ""
+                    # Переход может быть в rank_transition или в self.new_rank (например из вебхука)
+                    transition_str = rank_transition or self.new_rank or ""
+                    new_rank_canon = (parse_transition_to_new_rank(transition_str) or "").strip().lower()
+                    new_rank_norm = _norm_text(self.new_rank)
+                    # Сержант (ровно), не младший и не старший
+                    is_sergeant = (
+                        new_rank_canon in ("сержант", "сержант полиции")
+                        or new_rank_norm in ("сержант", "сержант полиции")
+                    )
+                    if is_sergeant:
+                        role_passed = interaction.guild.get_role(int(role_passed_academy_id))
+                        if role_passed and role_passed not in member.roles:
+                            try:
+                                await apply_role_changes(member, add=[role_passed])
+                                logger.info("Повышение до сержанта: выдана роль «прошедший академию» user_id=%s", member.id)
+                            except (discord.Forbidden, discord.HTTPException) as e:
+                                logger.warning("Не удалось выдать ROLE_PASSED_ACADEMY user=%s: %s", member.id, e)
+                        elif role_passed and role_passed in member.roles:
+                            logger.info("Повышение до сержанта: роль «прошедший академию» уже есть user_id=%s", member.id)
+                        elif not role_passed:
+                            logger.warning("ROLE_PASSED_ACADEMY=%s не найден на сервере", role_passed_academy_id)
+                    else:
+                        logger.debug(
+                            "Повышение не до сержанта (роль прошедший академию не выдаём): new_rank=%r transition=%r canon=%r norm=%r",
+                            self.new_rank, rank_transition, new_rank_canon, new_rank_norm,
+                        )
+
                 # ЛС пользователю
                 dm_warning = None
                 try:
                     embed = discord.Embed(
-                        title="✅ рапорт на повышение одобрен",
+                        title="✅ Рапорт на повышение одобрен",
                         color=discord.Color.green(),
                         description=f"**{interaction.guild.name}**\n\nВаш рапорт на повышение был одобрен.",
                         timestamp=interaction.created_at
                     )
-                    embed.add_field(name="новое звание", value=self.new_rank, inline=True)
-                    embed.add_field(name="принял", value=interaction.user.mention, inline=True)
+                    embed.add_field(name="Новое звание", value=self.new_rank, inline=True)
+                    embed.add_field(name="Принял", value=interaction.user.mention, inline=True)
 
                     await member.send(embed=embed)
                 except discord.Forbidden:

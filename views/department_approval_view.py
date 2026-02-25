@@ -17,6 +17,8 @@ from utils.rate_limiter import apply_role_changes, safe_discord_call
 from services.department_roles import (
     get_chief_deputy_role_ids,
     get_dept_and_rank_roles,
+    get_all_dept_and_rank_roles,
+    get_base_rank_role,
     get_approval_label_source,
     get_approval_label_target,
 )
@@ -66,7 +68,6 @@ class DepartmentApprovalView(View):
         label_src = get_approval_label_source(self.source_dept)
         label_tgt = get_approval_label_target(self.target_dept)
 
-        # Кнопка "Одобрение [источник]" — не показываем для заявок из Академии (принимает/отклоняет только целевой отдел)
         if not self.from_academy:
             if self.approved_source:
                 self.add_item(
@@ -77,16 +78,29 @@ class DepartmentApprovalView(View):
                         disabled=True,
                     )
                 )
+                b_reject_src_dis = Button(
+                    label=f"Отклонить ({label_src})",
+                    style=discord.ButtonStyle.danger,
+                    custom_id="reject_source",
+                )
+                b_reject_src_dis.callback = self._handle_reject
+                self.add_item(b_reject_src_dis)
             else:
-                b_src = Button(
-                    label=f"Одобрение {label_src}",
+                b_accept_src = Button(
+                    label=f"Принять ({label_src})",
                     style=discord.ButtonStyle.success,
                     custom_id="approve_source",
                 )
-                b_src.callback = self._handle_approve_source
-                self.add_item(b_src)
+                b_accept_src.callback = self._handle_approve_source
+                self.add_item(b_accept_src)
+                b_reject_src = Button(
+                    label=f"Отклонить ({label_src})",
+                    style=discord.ButtonStyle.danger,
+                    custom_id="reject_source",
+                )
+                b_reject_src.callback = self._handle_reject
+                self.add_item(b_reject_src)
 
-        # Кнопка "Одобрение [целевой отдел]"
         if self.approved_target:
             self.add_item(
                 Button(
@@ -96,24 +110,29 @@ class DepartmentApprovalView(View):
                     disabled=True,
                 )
             )
+            self.add_item(
+                Button(
+                    label=f"Отклонить ({label_tgt})",
+                    style=discord.ButtonStyle.danger,
+                    custom_id="reject_target",
+                    disabled=True,
+                )
+            )
         else:
-            b_tgt = Button(
-                label=f"Одобрение {label_tgt}",
+            b_accept_tgt = Button(
+                label=f"Принять ({label_tgt})",
                 style=discord.ButtonStyle.success,
                 custom_id="approve_target",
             )
-            b_tgt.callback = self._handle_approve_target
-            self.add_item(b_tgt)
-
-        # Кнопка "Отклонить" только для заявок из Академии в ГРОМ/ОРЛС/ОСБ
-        if self.from_academy and self.target_dept in ("grom", "orls", "osb"):
-            reject_btn = Button(
-                label="Отклонить",
+            b_accept_tgt.callback = self._handle_approve_target
+            self.add_item(b_accept_tgt)
+            b_reject_tgt = Button(
+                label=f"Отклонить ({label_tgt})",
                 style=discord.ButtonStyle.danger,
-                custom_id="reject_dept",
+                custom_id="reject_target",
             )
-            reject_btn.callback = self._handle_reject
-            self.add_item(reject_btn)
+            b_reject_tgt.callback = self._handle_reject
+            self.add_item(b_reject_tgt)
 
     async def _handle_reject(self, interaction: discord.Interaction):
         from modals.department_reject_modal import DepartmentRejectModal
@@ -125,11 +144,9 @@ class DepartmentApprovalView(View):
         await interaction.response.send_modal(modal)
 
     def _role_ids_for_button(self, custom_id: str) -> list[int]:
-        if custom_id == "approve_source":
+        if custom_id == "approve_source" or custom_id == "reject_source":
             return get_chief_deputy_role_ids(self.source_dept)
-        if custom_id == "approve_target":
-            return get_chief_deputy_role_ids(self.target_dept)
-        if custom_id == "reject_dept":
+        if custom_id == "approve_target" or custom_id == "reject_target":
             return get_chief_deputy_role_ids(self.target_dept)
         return []
 
@@ -141,7 +158,7 @@ class DepartmentApprovalView(View):
         if not custom_id:
             return True
         role_ids = self._role_ids_for_button(custom_id)
-        if not role_ids and custom_id != "reject_dept":
+        if not role_ids and custom_id not in ("reject_source", "reject_target"):
             await interaction.response.send_message("❌ Не настроены роли для этого действия.", ephemeral=True)
             return False
         if not _has_any_role(interaction.user, role_ids):
@@ -201,6 +218,12 @@ class DepartmentApprovalView(View):
         if self.approved_target:
             await interaction.response.send_message("⚠️ Уже одобрено.", ephemeral=True)
             return
+        if not self.from_academy and not self.approved_source:
+            await interaction.response.send_message(
+                "❌ Сначала должен одобрить начальник (или зам) отдела-источника.",
+                ephemeral=True,
+            )
+            return
         await interaction.response.defer(ephemeral=True)
         try:
             async with action_lock(self.message_id, "одобрение заявки перевод"):
@@ -210,16 +233,27 @@ class DepartmentApprovalView(View):
                     await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="пользователь"), ephemeral=True)
                     return
 
-                # Снять все роли старого отдела (роль отдела + все ранги); при заявке из Академии — роли Академии
-                remove_dept, remove_rank = [], []
-                if self.from_academy:
-                    remove_dept, remove_rank = get_dept_and_rank_roles(guild, "academy")
-                else:
-                    remove_dept, remove_rank = get_dept_and_rank_roles(guild, self.source_dept)
-                add_dept, add_rank = get_dept_and_rank_roles(guild, self.target_dept)
+                # Снять все роли отделов и их рангов (ГРОМ/ППС/ОРЛС/ОСБ/Академия),
+                # затем выдать только роли целевого подразделения
+                all_dept_roles, all_rank_roles = get_all_dept_and_rank_roles(guild)
+                remove_dept = [r for r in all_dept_roles if r]
+                remove_rank = [r for r in all_rank_roles if r]
+
+                # Выдаём роль отдела и только одну базовую должность (стажёр)
+                add_dept, _ = get_dept_and_rank_roles(guild, self.target_dept)
+                base_rank = get_base_rank_role(guild, self.target_dept)
 
                 to_remove = [r for r in remove_dept + remove_rank if r]
-                to_add = [r for r in add_dept + add_rank if r]
+                # При переводе из Академии в подразделение снять роль «прошедший академию»
+                if self.from_academy:
+                    role_passed_id = getattr(Config, "ROLE_PASSED_ACADEMY", 0) or 0
+                    if role_passed_id:
+                        role_passed = guild.get_role(int(role_passed_id))
+                        if role_passed:
+                            to_remove.append(role_passed)
+                to_add = [r for r in add_dept if r]
+                if base_rank:
+                    to_add.append(base_rank)
 
                 if not to_add:
                     await interaction.followup.send(
@@ -236,7 +270,10 @@ class DepartmentApprovalView(View):
                 except Exception as e:
                     logger.warning("Не удалось обновить данные участника после смены ролей: %s", e)
                 else:
-                    still_has_old = [r for r in to_remove if r in member.roles]
+                    # Для проверки «старых ролей» игнорируем роли целевого отдела,
+                    # т.к. мы специально их снимаем и тут же выдаём заново.
+                    target_roles_set = set(to_add)
+                    still_has_old = [r for r in to_remove if r in member.roles and r not in target_roles_set]
                     missing_new = [r for r in to_add if r not in member.roles]
                     if still_has_old or missing_new:
                         msg_parts = []

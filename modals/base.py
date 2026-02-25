@@ -26,9 +26,17 @@ class BaseRequestModal(Modal):
         super().__init__(title=title)
         self.request_type = request_type
         name_default, surname_default = _name_surname_defaults(member)
-        self.name = TextInput(label='имя', placeholder='введите ваше имя', max_length=Config.MAX_NAME_LENGTH, min_length=Config.MIN_NAME_LENGTH, required=True, default=name_default)
-        self.surname = TextInput(label='фамилия', placeholder='введите вашу фамилию', max_length=Config.MAX_NAME_LENGTH, min_length=Config.MIN_NAME_LENGTH, required=True, default=surname_default)
-        self.static_id = TextInput(label='статик id', placeholder='введите 6 цифр (пример: 537123)', max_length=10, min_length=Config.STATIC_ID_LENGTH, required=True)
+        min_len = getattr(Config, "MIN_NAME_LENGTH", 2)
+        # Discord 400: default (value) не должен быть короче min_length — передаём default только если длина >= min_len
+        kw_name = {"label": "Имя", "placeholder": "Введите ваше имя", "max_length": Config.MAX_NAME_LENGTH, "min_length": min_len, "required": True}
+        if name_default and len(name_default) >= min_len:
+            kw_name["default"] = name_default
+        kw_surname = {"label": "Фамилия", "placeholder": "Введите вашу фамилию", "max_length": Config.MAX_NAME_LENGTH, "min_length": min_len, "required": True}
+        if surname_default and len(surname_default) >= min_len:
+            kw_surname["default"] = surname_default
+        self.name = TextInput(**kw_name)
+        self.surname = TextInput(**kw_surname)
+        self.static_id = TextInput(label='Статик ID', placeholder='Введите 6 цифр (пример: 537123)', max_length=10, min_length=Config.STATIC_ID_LENGTH, required=True)
         self.add_item(self.name)
         self.add_item(self.surname)
         self.add_item(self.static_id)
@@ -89,7 +97,7 @@ class BaseRequestModal(Modal):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             if await self.has_active_request(interaction.user.id):
-                await interaction.response.send_message("❌ у вас уже есть активная заявка!", ephemeral=True)
+                await interaction.response.send_message("❌ У вас уже есть активная заявка!", ephemeral=True)
                 return
             success, result = await self.validate_all()
             if not success:
@@ -110,7 +118,7 @@ class BaseRequestModal(Modal):
             channel = bot.get_channel(Config.REQUEST_CHANNEL_ID)
             if not channel:
                 logger.error(f"канал заявок {Config.REQUEST_CHANNEL_ID} не найден")
-                await interaction.response.send_message("❌ ошибка конфигурации: канал заявок не найден", ephemeral=True)
+                await interaction.response.send_message("❌ Ошибка конфигурации: канал заявок не найден", ephemeral=True)
                 return
             from utils.rate_limiter import safe_send
             message = await safe_send(channel, embed=embed, view=view)

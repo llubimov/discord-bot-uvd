@@ -5,7 +5,7 @@ from config import Config
 
 class ReasonMixin:
     def add_reason_field(self):
-        self.reason = TextInput(label='причина', placeholder='электронная заявка / собеседование', max_length=Config.MAX_REASON_LENGTH, style=discord.TextStyle.paragraph, required=True)
+        self.reason = TextInput(label='Причина', placeholder='Электронная заявка / собеседование', max_length=Config.MAX_REASON_LENGTH, style=discord.TextStyle.paragraph, required=True)
         self.add_item(self.reason)
 
     async def validate_reason(self, data):
@@ -17,7 +17,7 @@ class ReasonMixin:
 
 class ApprovalMixin:
     def add_approval_field(self):
-        self.approval = TextInput(label='одобрение', placeholder='ссылка на одобрение / подтверждение', max_length=Config.MAX_REASON_LENGTH, style=discord.TextStyle.paragraph, required=True)
+        self.approval = TextInput(label='Одобрение', placeholder='Ссылка на одобрение / подтверждение', max_length=Config.MAX_REASON_LENGTH, style=discord.TextStyle.paragraph, required=True)
         self.add_item(self.approval)
 
     async def validate_approval(self, data):
@@ -29,7 +29,7 @@ class ApprovalMixin:
 
 class RankMixin:
     def add_rank_field(self):
-        self.rank = TextInput(label='звание', placeholder='введите ваше текущее звание', max_length=Config.MAX_RANK_LENGTH, required=True)
+        self.rank = TextInput(label='Звание', placeholder='Введите ваше текущее звание', max_length=Config.MAX_RANK_LENGTH, required=True)
         self.add_item(self.rank)
 
     async def validate_rank(self, data):

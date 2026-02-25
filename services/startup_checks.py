@@ -150,7 +150,6 @@ async def run_startup_checks(bot: discord.Client):
     _check_channel(guild, getattr(Config, "ACADEMY_CHANNEL_ID", 0), "ACADEMY_CHANNEL_ID")
     _check_channel(guild, getattr(Config, "EXAM_CHANNEL_ID", 0), "EXAM_CHANNEL_ID")
 
-    # Каналы заявок на перевод между отделами и админ-перевод (проверяем только если заданы)
     if getattr(Config, "CHANNEL_APPLY_GROM", 0):
         _check_channel(guild, Config.CHANNEL_APPLY_GROM, "CHANNEL_APPLY_GROM")
     if getattr(Config, "CHANNEL_APPLY_PPS", 0):
@@ -177,7 +176,6 @@ async def run_startup_checks(bot: discord.Client):
     _check_role(guild, getattr(Config, "GOV_ROLE_TO_GIVE", 0), "GOV_ROLE_TO_GIVE", bot_role=bot_role)
     _check_role_list(guild, getattr(Config, "PPS_ROLE_IDS", []), "PPS_ROLE_IDS", bot_role=bot_role)
 
-    # Роли и каналы переводов между отделами (проверяем только если заданы)
     for name in ("ROLE_CHIEF_GROM", "ROLE_DEPUTY_GROM", "ROLE_CHIEF_PPS", "ROLE_DEPUTY_PPS",
                  "ROLE_CHIEF_OSB", "ROLE_DEPUTY_OSB", "ROLE_CHIEF_ORLS", "ROLE_DEPUTY_ORLS"):
         rid = getattr(Config, name, 0)
@@ -198,6 +196,8 @@ async def run_startup_checks(bot: discord.Client):
     rank_academy = getattr(Config, "ROLE_RANK_ACADEMY", None) or []
     if rank_academy:
         _check_role_list(guild, rank_academy, "ROLE_RANK_ACADEMY", bot_role=bot_role)
+    if getattr(Config, "ROLE_PASSED_ACADEMY", 0):
+        _check_role(guild, Config.ROLE_PASSED_ACADEMY, "ROLE_PASSED_ACADEMY", bot_role=bot_role)
 
     _check_promotion_channels(guild)
     _check_rank_roles(guild, bot_role)

@@ -12,12 +12,16 @@ from discord.ui import Modal, TextInput, View, Button
 from config import Config
 from database import save_department_transfer_request
 from state import active_department_transfers, bot
-from services.department_roles import get_chief_deputy_role_ids, get_approval_label_target
+from services.department_roles import (
+    get_chief_deputy_role_ids,
+    get_approval_label_target,
+    get_dept_and_rank_roles,
+    get_base_rank_role,
+)
 from utils.rate_limiter import safe_send, apply_role_changes, safe_discord_call
 from utils.validators import Validators
 from views.department_approval_view import DepartmentApprovalView
 from views.message_texts import ErrorMessages
-from services.department_roles import get_dept_and_rank_roles
 from services.department_nickname import get_transfer_nickname
 
 logger = logging.getLogger(__name__)
@@ -138,10 +142,7 @@ def _get_apply_channel_id(target_dept: str) -> int:
     return int(mapping.get((target_dept or "").strip().lower(), 0) or 0)
 
 
-# Возраст: только цифры, от 14 до 100
-_AGE_MIN, _AGE_MAX = 14, 100
-
-
+# Возраст в заявках в подразделения: только цифры, от DEPT_APPLY_AGE_MIN до DEPT_APPLY_AGE_MAX (из Config)
 def _validate_apply_fields(name: str, surname: str, rank: str, age: str, from_academy: bool) -> tuple[bool, str | None, dict]:
     ok, res = Validators.validate_name(name)
     if not ok:
@@ -164,8 +165,10 @@ def _validate_apply_fields(name: str, surname: str, rank: str, age: str, from_ac
         return False, "**Возраст:** только цифры (например: 18).", {}
     try:
         a = int(age_clean)
-        if a < _AGE_MIN or a > _AGE_MAX:
-            return False, f"**Возраст:** укажите число от {_AGE_MIN} до {_AGE_MAX}.", {}
+        age_min = getattr(Config, "DEPT_APPLY_AGE_MIN", 10)
+        age_max = getattr(Config, "DEPT_APPLY_AGE_MAX", 100)
+        if a < age_min or a > age_max:
+            return False, f"**Возраст:** укажите число от {age_min} до {age_max}.", {}
     except ValueError:
         return False, "**Возраст:** укажите число.", {}
     return True, None, {"name": name_fmt, "surname": surname_fmt, "rank": rank_fmt, "age": age_clean}
@@ -202,9 +205,12 @@ async def _post_application(
         member = guild.get_member(user_id) or await guild.fetch_member(user_id)
         if member:
             remove_dept, remove_rank = get_dept_and_rank_roles(guild, "academy")
-            add_dept, add_rank = get_dept_and_rank_roles(guild, "pps")
+            add_dept, _ = get_dept_and_rank_roles(guild, "pps")
+            base_rank = get_base_rank_role(guild, "pps")
             to_remove = [r for r in remove_dept + remove_rank if r]
-            to_add = [r for r in add_dept + add_rank if r]
+            to_add = [r for r in add_dept if r]
+            if base_rank:
+                to_add.append(base_rank)
             if to_remove or to_add:
                 await apply_role_changes(member, remove=to_remove, add=to_add)
             new_nick = get_transfer_nickname("pps", form_data)

@@ -17,6 +17,14 @@ from constants import StatusValues, FieldNames, WebhookPatterns
 logger = logging.getLogger(__name__)
 
 
+def _set_firing_status_in_embed(embed: discord.Embed, status_value: str) -> None:
+    for i, field in enumerate(embed.fields):
+        if (field.name or "").strip() == FieldNames.STATUS:
+            embed.set_field_at(i, name=FieldNames.STATUS, value=status_value, inline=field.inline)
+            return
+    embed.add_field(name=FieldNames.STATUS, value=status_value, inline=True)
+
+
 class FiringView(View):
     def __init__(self, user_id: int):
         super().__init__(timeout=None)
@@ -33,11 +41,11 @@ class FiringView(View):
             return False
         return True
 
-    @discord.ui.button(label="✅ подтвердить увольнение", style=discord.ButtonStyle.danger, custom_id="fire_accept")
+    @discord.ui.button(label="Уволить", style=discord.ButtonStyle.danger, custom_id="fire_accept")
     async def accept_firing_button(self, interaction: discord.Interaction, button: Button):
         await self.handle_fire(interaction)
 
-    @discord.ui.button(label="❌ отклонить рапорт", style=discord.ButtonStyle.secondary, custom_id="fire_reject")
+    @discord.ui.button(label="Отклонить с причиной", style=discord.ButtonStyle.secondary, custom_id="fire_reject")
     async def reject_firing_button(self, interaction: discord.Interaction, button: Button):
         from modals.firing_reject_reason import FiringRejectReasonModal
         modal = FiringRejectReasonModal(user_id=self.user_id, message_id=interaction.message.id)
@@ -53,21 +61,26 @@ class FiringView(View):
         full_name = "Сотрудник"
         reason = "псж"
 
-        m_name = re.search(WebhookPatterns.FIRING["full_name"], desc, re.IGNORECASE)
+        # Новый формат: "Я, **Имя Фамилия**, прошу"
+        m_name = re.search(r"Я,\s*\*\*([^*]+)\*\*,\s*прошу", desc, re.IGNORECASE)
+        if m_name:
+            full_name = (m_name.group(1) or "").strip() or "Сотрудник"
+        if not m_name:
+            m_name = re.search(WebhookPatterns.FIRING["full_name"], desc, re.IGNORECASE)
         if not m_name:
             m_name = re.search(WebhookPatterns.FIRING["full_name_alt"], desc, re.IGNORECASE)
-        if m_name:
+        if m_name and not full_name or full_name == "Сотрудник":
             try:
                 full_name = (m_name.group(1) or "").strip() or "Сотрудник"
             except Exception:
-                full_name = "Сотрудник"
+                pass
 
         m_reason = re.search(WebhookPatterns.FIRING["reason"], desc, re.IGNORECASE)
         if m_reason:
             try:
                 reason = (m_reason.group(1) or "").strip() or "псж"
             except Exception:
-                reason = "псж"
+                pass
 
         return {
             "discord_id": self.user_id,
@@ -118,14 +131,40 @@ class FiringView(View):
 
                 try:
                     member = interaction.guild.get_member(int(request_data.get("discord_id", 0)))
-                except (TypeError, ValueError):
+                    if not member:
+                        member = await interaction.guild.fetch_member(int(request_data.get("discord_id", 0)))
+                except (TypeError, ValueError, discord.NotFound):
                     member = None
 
-                if not member:
-                    await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="пользователь"), ephemeral=True)
-                    return
-
                 full_name = request_data.get("full_name", "Сотрудник")
+
+                if not member:
+                    # Сотрудник уже покинул сервер
+                    new_embed = copy_embed(interaction.message.embeds[0])
+                    new_embed = add_officer_field(new_embed, interaction.user.mention)
+                    new_embed.color = discord.Color.red()
+                    _set_firing_status_in_embed(new_embed, StatusValues.FIRED)
+                    try:
+                        await interaction.message.edit(embed=new_embed, view=None)
+                    except Exception as e:
+                        logger.warning("Не удалось обновить рапорт (member left): %s", e)
+                    active_firing_requests.pop(interaction.message.id, None)
+                    try:
+                        await asyncio.to_thread(delete_request, "firing_requests", interaction.message.id)
+                    except Exception as e:
+                        logger.warning("Не удалось удалить firing_request из БД: %s", e)
+                    await interaction.followup.send(
+                        f"✅ Рапорт зафиксирован. Сотрудник **{full_name}** уже покинул сервер.",
+                        ephemeral=True,
+                    )
+                    try:
+                        await interaction.message.channel.send(
+                            f"Сотрудник **{full_name}** (покинул сервер) — рапорт на увольнение зафиксирован.",
+                            allowed_mentions=discord.AllowedMentions.none(),
+                        )
+                    except Exception:
+                        pass
+                    return
 
                 # Снимаем роли
                 roles_to_keep_ids = set(Config.ROLES_TO_KEEP_ON_FIRE)
@@ -219,15 +258,7 @@ class FiringView(View):
                 new_embed = copy_embed(old_embed)
                 new_embed = add_officer_field(new_embed, interaction.user.mention)
                 new_embed.color = discord.Color.red()
-
-                found = False
-                for i, field in enumerate(new_embed.fields):
-                    if field.name == FieldNames.STATUS:
-                        new_embed.set_field_at(i, name=FieldNames.STATUS, value=StatusValues.FIRED, inline=True)
-                        found = True
-                        break
-                if not found:
-                    new_embed.add_field(name=FieldNames.STATUS, value=StatusValues.FIRED, inline=True)
+                _set_firing_status_in_embed(new_embed, StatusValues.FIRED)
 
                 try:
                     await message.edit(embed=new_embed, view=None)
@@ -241,6 +272,15 @@ class FiringView(View):
                     logger.warning("HTTP ошибка при обновлении рапорта увольнения %s: %s", message.id, e, exc_info=True)
                     await interaction.followup.send("❌ Ошибка Discord API при обновлении рапорта.", ephemeral=True)
                     return
+
+                # Сообщение в канал: сотрудник уволен, роль удалена
+                try:
+                    await message.channel.send(
+                        f"Сотрудник {member.mention} уволен. Роль удалена.",
+                        allowed_mentions=discord.AllowedMentions.none(),
+                    )
+                except Exception as e:
+                    logger.warning("Не удалось отправить сообщение об увольнении в канал: %s", e)
 
                 # Чистим state + БД
                 active_firing_requests.pop(interaction.message.id, None)

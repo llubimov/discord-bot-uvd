@@ -150,6 +150,20 @@ async def run_startup_checks(bot: discord.Client):
     _check_channel(guild, getattr(Config, "ACADEMY_CHANNEL_ID", 0), "ACADEMY_CHANNEL_ID")
     _check_channel(guild, getattr(Config, "EXAM_CHANNEL_ID", 0), "EXAM_CHANNEL_ID")
 
+    # Каналы заявок на перевод между отделами и админ-перевод (проверяем только если заданы)
+    if getattr(Config, "CHANNEL_APPLY_GROM", 0):
+        _check_channel(guild, Config.CHANNEL_APPLY_GROM, "CHANNEL_APPLY_GROM")
+    if getattr(Config, "CHANNEL_APPLY_PPS", 0):
+        _check_channel(guild, Config.CHANNEL_APPLY_PPS, "CHANNEL_APPLY_PPS")
+    if getattr(Config, "CHANNEL_APPLY_OSB", 0):
+        _check_channel(guild, Config.CHANNEL_APPLY_OSB, "CHANNEL_APPLY_OSB")
+    if getattr(Config, "CHANNEL_APPLY_ORLS", 0):
+        _check_channel(guild, Config.CHANNEL_APPLY_ORLS, "CHANNEL_APPLY_ORLS")
+    if getattr(Config, "CHANNEL_ADMIN_TRANSFER", 0):
+        _check_channel(guild, Config.CHANNEL_ADMIN_TRANSFER, "CHANNEL_ADMIN_TRANSFER")
+    if getattr(Config, "CHANNEL_CADRE_LOG", 0):
+        _check_channel(guild, Config.CHANNEL_CADRE_LOG, "CHANNEL_CADRE_LOG")
+
     _check_role(guild, getattr(Config, "STAFF_ROLE_ID", 0), "STAFF_ROLE_ID", bot_role=bot_role)
     _check_role(guild, getattr(Config, "TRANSFER_STAFF_ROLE_ID", 0), "TRANSFER_STAFF_ROLE_ID", bot_role=bot_role)
     _check_role(guild, getattr(Config, "GOV_STAFF_ROLE_ID", 0), "GOV_STAFF_ROLE_ID", bot_role=bot_role)
@@ -157,10 +171,33 @@ async def run_startup_checks(bot: discord.Client):
     _check_role(guild, getattr(Config, "WAREHOUSE_STAFF_ROLE_ID", 0), "WAREHOUSE_STAFF_ROLE_ID", bot_role=bot_role)
 
     _check_role(guild, getattr(Config, "FIRED_ROLE_ID", 0), "FIRED_ROLE_ID", bot_role=bot_role)
+    _check_role_list(guild, getattr(Config, "ROLES_TO_KEEP_ON_FIRE", []), "ROLES_TO_KEEP_ON_FIRE", bot_role=bot_role)
     _check_role_list(guild, getattr(Config, "CADET_ROLES_TO_GIVE", []), "CADET_ROLES_TO_GIVE", bot_role=bot_role)
     _check_role_list(guild, getattr(Config, "TRANSFER_ROLES_TO_GIVE", []), "TRANSFER_ROLES_TO_GIVE", bot_role=bot_role)
     _check_role(guild, getattr(Config, "GOV_ROLE_TO_GIVE", 0), "GOV_ROLE_TO_GIVE", bot_role=bot_role)
     _check_role_list(guild, getattr(Config, "PPS_ROLE_IDS", []), "PPS_ROLE_IDS", bot_role=bot_role)
+
+    # Роли и каналы переводов между отделами (проверяем только если заданы)
+    for name in ("ROLE_CHIEF_GROM", "ROLE_DEPUTY_GROM", "ROLE_CHIEF_PPS", "ROLE_DEPUTY_PPS",
+                 "ROLE_CHIEF_OSB", "ROLE_DEPUTY_OSB", "ROLE_CHIEF_ORLS", "ROLE_DEPUTY_ORLS"):
+        rid = getattr(Config, name, 0)
+        if rid:
+            _check_role(guild, rid, name, bot_role=bot_role)
+    for name in ("ROLE_DEPT_GROM", "ROLE_DEPT_PPS", "ROLE_DEPT_OSB", "ROLE_DEPT_ORLS"):
+        rid = getattr(Config, name, 0)
+        if rid:
+            _check_role(guild, rid, name, bot_role=bot_role)
+    for list_name in ("ROLE_RANK_GROM", "ROLE_RANK_PPS", "ROLE_RANK_OSB", "ROLE_RANK_ORLS"):
+        ids = getattr(Config, list_name, None) or []
+        if ids:
+            _check_role_list(guild, ids, list_name, bot_role=bot_role)
+    if getattr(Config, "ROLE_ACADEMY", 0):
+        _check_role(guild, Config.ROLE_ACADEMY, "ROLE_ACADEMY", bot_role=bot_role)
+    if getattr(Config, "ROLE_DEPT_ACADEMY", 0):
+        _check_role(guild, Config.ROLE_DEPT_ACADEMY, "ROLE_DEPT_ACADEMY", bot_role=bot_role)
+    rank_academy = getattr(Config, "ROLE_RANK_ACADEMY", None) or []
+    if rank_academy:
+        _check_role_list(guild, rank_academy, "ROLE_RANK_ACADEMY", bot_role=bot_role)
 
     _check_promotion_channels(guild)
     _check_rank_roles(guild, bot_role)

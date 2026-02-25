@@ -5,8 +5,8 @@ from enums import RequestType
 from constants import FieldNames, StatusValues
 
 class CadetModal(BaseRequestModal, ReasonMixin):
-    def __init__(self):
-        super().__init__("заявка на получение роли", RequestType.CADET)
+    def __init__(self, member=None):
+        super().__init__("заявка на получение роли", RequestType.CADET, member=member)
         self.add_reason_field()
 
     async def validate_specific(self, common):

@@ -13,12 +13,21 @@ from database import save_request
 
 logger = logging.getLogger(__name__)
 
+
+def _name_surname_defaults(member) -> Tuple[str, str]:
+    if not member:
+        return "", ""
+    from utils.member_display import get_member_name_surname
+    return get_member_name_surname(member)
+
+
 class BaseRequestModal(Modal):
-    def __init__(self, title: str, request_type: RequestType):
+    def __init__(self, title: str, request_type: RequestType, member=None):
         super().__init__(title=title)
         self.request_type = request_type
-        self.name = TextInput(label='имя', placeholder='введите ваше имя', max_length=Config.MAX_NAME_LENGTH, min_length=Config.MIN_NAME_LENGTH, required=True)
-        self.surname = TextInput(label='фамилия', placeholder='введите вашу фамилию', max_length=Config.MAX_NAME_LENGTH, min_length=Config.MIN_NAME_LENGTH, required=True)
+        name_default, surname_default = _name_surname_defaults(member)
+        self.name = TextInput(label='имя', placeholder='введите ваше имя', max_length=Config.MAX_NAME_LENGTH, min_length=Config.MIN_NAME_LENGTH, required=True, default=name_default)
+        self.surname = TextInput(label='фамилия', placeholder='введите вашу фамилию', max_length=Config.MAX_NAME_LENGTH, min_length=Config.MIN_NAME_LENGTH, required=True, default=surname_default)
         self.static_id = TextInput(label='статик id', placeholder='введите 6 цифр (пример: 537123)', max_length=10, min_length=Config.STATIC_ID_LENGTH, required=True)
         self.add_item(self.name)
         self.add_item(self.surname)

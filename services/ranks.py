@@ -2,6 +2,7 @@ import logging
 import re
 from typing import Dict, Tuple, Optional
 
+import discord
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -73,3 +74,36 @@ def parse_transition_to_new_rank(transition: str):
 def get_all_rank_role_ids_from_mapping():
     mapping = build_normalized_rank_mapping()
     return set(mapping.values())
+
+
+def _build_role_id_to_display_name() -> Dict[int, str]:
+    raw = getattr(Config, "RANK_ROLE_MAPPING", {}) or {}
+    result: Dict[int, str] = {}
+    for raw_key, role_id in raw.items():
+        try:
+            rid = int(role_id)
+        except Exception:
+            continue
+        key = str(raw_key).strip()
+        for sep in ("->", "→", "➡", "⇒"):
+            if sep in key:
+                part = key.split(sep, 1)[-1].strip()
+                if part:
+                    result[rid] = part[0].upper() + part[1:] if len(part) > 1 else part.upper()
+                break
+    return result
+
+
+def get_member_rank_display(member: Optional[discord.Member]) -> str:
+    if not member or not getattr(member, "roles", None):
+        return ""
+    all_rank_ids = set(getattr(Config, "ALL_RANK_ROLE_IDS", []) or [])
+    all_rank_ids |= get_all_rank_role_ids_from_mapping()
+    if not all_rank_ids:
+        return ""
+    role_to_name = _build_role_id_to_display_name()
+    member_rank_roles = [r for r in member.roles if r.id in all_rank_ids]
+    if not member_rank_roles:
+        return ""
+    top = max(member_rank_roles, key=lambda r: r.position)
+    return role_to_name.get(top.id, top.name) or ""

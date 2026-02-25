@@ -1,10 +1,3 @@
-"""
-=====================================================
-БАЗОВЫЙ МЕНЕДЖЕР ПОЗИЦИИ СООБЩЕНИЙ
-Следит чтобы важные сообщения всегда были внизу канала
-=====================================================
-"""
-
 import logging
 import asyncio
 import discord
@@ -14,17 +7,6 @@ logger = logging.getLogger(__name__)
 
 
 class BasePositionManager(ABC):
-    """
-    Базовый класс для менеджеров позиции сообщений.
-    Следит чтобы сообщение всегда было последним в канале.
-
-    Наследники должны определить:
-    - channel_id - ID канала
-    - get_embed() - создать embed для сообщения
-    - get_view() - создать View для сообщения
-    - should_keep_message() - проверка что сообщение принадлежит нам
-    """
-
     def __init__(self, bot):
         self.bot = bot
         self.message_id = None
@@ -33,33 +15,25 @@ class BasePositionManager(ABC):
     @property
     @abstractmethod
     def channel_id(self) -> int:
-        """ID канала для мониторинга"""
         pass
 
     @property
     def check_interval(self) -> int:
-        """Интервал проверки в секундах (по умолчанию 60)"""
         return 60
 
     @abstractmethod
     async def get_embed(self) -> discord.Embed:
-        """Создать embed для сообщения"""
         pass
 
     @abstractmethod
     async def get_view(self) -> discord.ui.View:
-        """Создать View для сообщения"""
         pass
 
     @abstractmethod
     async def should_keep_message(self, message: discord.Message) -> bool:
-        """
-        Проверить что сообщение принадлежит нам и его нужно сохранять
-        """
         pass
 
     async def find_our_message(self, channel: discord.TextChannel):
-        """Ищет наше сообщение в канале"""
         try:
             async for msg in channel.history(limit=50):
                 try:
@@ -80,7 +54,6 @@ class BasePositionManager(ABC):
         return None
 
     async def ensure_position(self):
-        """Проверяет и перемещает сообщение если нужно"""
         if self.is_updating:
             logger.debug("Пропуск ensure_position: обновление уже выполняется (канал %s)", self.channel_id)
             return
@@ -199,7 +172,6 @@ class BasePositionManager(ABC):
             self.is_updating = False
 
     async def _remove_duplicates(self, channel: discord.TextChannel):
-        """Удаляет дубликаты наших сообщений"""
         try:
             async for msg in channel.history(limit=50):
                 try:
@@ -227,7 +199,6 @@ class BasePositionManager(ABC):
             logger.error("Ошибка при удалении дубликатов в канале %s: %s", self.channel_id, e, exc_info=True)
 
     async def start_checking(self):
-        """Запускает периодическую проверку"""
         await self.bot.wait_until_ready()
 
         # Первая проверка

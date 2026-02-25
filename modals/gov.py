@@ -5,8 +5,8 @@ from enums import RequestType
 from constants import FieldNames, StatusValues
 
 class GovModal(BaseRequestModal, ApprovalMixin):
-    def __init__(self):
-        super().__init__("заявка для гос сотрудников", RequestType.GOV)
+    def __init__(self, member=None):
+        super().__init__("заявка для гос сотрудников", RequestType.GOV, member=member)
         self.add_approval_field()
 
     async def validate_specific(self, common):

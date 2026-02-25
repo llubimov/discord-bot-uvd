@@ -7,6 +7,7 @@ from database import (
     load_all_firing_requests,
     load_all_promotion_requests,
     load_all_warehouse_requests,
+    load_all_department_transfer_requests,
 )
 
 try:
@@ -64,6 +65,7 @@ def _state_counts():
         "Увольнения": len(getattr(state, "active_firing_requests", {}) or {}),
         "Повышения": len(getattr(state, "active_promotion_requests", {}) or {}),
         "Склад": len(getattr(state, "warehouse_requests", {}) or {}),
+        "Переводы": len(getattr(state, "active_department_transfers", {}) or {}),
     }
 
 
@@ -72,11 +74,13 @@ def _db_counts():
     fir = load_all_firing_requests()
     pro = load_all_promotion_requests()
     wh = load_all_warehouse_requests()
+    dept = load_all_department_transfer_requests()
     return {
         "Заявки": len(req),
         "Увольнения": len(fir),
         "Повышения": len(pro),
         "Склад": len(wh),
+        "Переводы": len(dept),
     }
 
 
@@ -162,7 +166,9 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
             f"• Сервер: **{guild.name}**\n"
             f"• Бот: **{bot.user}**\n"
             f"• Ping: **{latency_ms} мс**\n"
-            f"• Верхняя роль бота: **{bot_top_role.name if bot_top_role else 'неизвестно'}**"
+            f"• Верхняя роль бота: **{bot_top_role.name if bot_top_role else 'неизвестно'}**\n"
+            f"• Версия: **2.0.0**\n"
+            f"• Разработчик: **swazy** <@755585532960047155>"
         ),
         inline=False
     )
@@ -200,6 +206,12 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
         _check_channel(guild, getattr(Config, "FIRING_CHANNEL_ID", 0), "Канал увольнений"),
         _check_channel(guild, getattr(Config, "WAREHOUSE_REQUEST_CHANNEL_ID", 0), "Канал склада"),
         _check_channel(guild, getattr(Config, "ACADEMY_CHANNEL_ID", 0), "Канал академии"),
+        _check_channel(guild, getattr(Config, "CHANNEL_APPLY_GROM", 0), "Заявки в ГРОМ"),
+        _check_channel(guild, getattr(Config, "CHANNEL_APPLY_PPS", 0), "Заявки в ППС"),
+        _check_channel(guild, getattr(Config, "CHANNEL_APPLY_OSB", 0), "Заявки в ОСБ"),
+        _check_channel(guild, getattr(Config, "CHANNEL_APPLY_ORLS", 0), "Заявки в ОРЛС"),
+        _check_channel(guild, getattr(Config, "CHANNEL_ADMIN_TRANSFER", 0), "Админ-перевод"),
+        _check_channel(guild, getattr(Config, "CHANNEL_CADRE_LOG", 0), "Лог кадровых"),
     ]
     embed.add_field(name="Ключевые каналы", value=_truncate_lines(channel_lines), inline=False)
 
@@ -228,5 +240,5 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
         promo_lines.append("⚠️ PROMOTION_CHANNELS пустой")
     embed.add_field(name="Повышения (канал → роль)", value=_truncate_lines(promo_lines), inline=False)
 
-    embed.set_footer(text="Команды: !diag | !diag_clean_orphans")
+    embed.set_footer(text="/diag | /diag_clean_orphans | /clear_firing")
     return embed

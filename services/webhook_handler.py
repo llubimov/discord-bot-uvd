@@ -15,14 +15,13 @@ logger = logging.getLogger(__name__)
 
 
 class WebhookHandler:
-    """Обработчик вебхуков (рапорты на увольнение/повышение)"""
+    """Обработчик вебхуков (рапорты увольнение/повышение)."""
 
     def __init__(self, bot):
         self.bot = bot
         self._compile_patterns()
 
     def _compile_patterns(self):
-        """Компилирует все регулярные выражения"""
         self.firing_patterns = {
             key: re.compile(pattern, re.IGNORECASE)
             for key, pattern in WebhookPatterns.FIRING.items()
@@ -37,7 +36,6 @@ class WebhookHandler:
         }
 
     async def process_webhook(self, message: discord.Message):
-        """Основной обработчик вебхуков"""
         try:
             if not message or not message.embeds:
                 return
@@ -67,14 +65,26 @@ class WebhookHandler:
             )
 
     async def process_firing(self, message: discord.Message, embed: discord.Embed):
-        """Обработка рапорта об увольнении"""
         data = self._parse_firing_embed(embed)
         if not data:
             logger.error("❌ Не удалось распарсить рапорт об увольнении (msg_id=%s)", message.id)
             return
 
         try:
-            new_embed = discord.Embed.from_dict(embed.to_dict())
+            from modals.firing_apply_modal import _build_firing_embed
+            from datetime import datetime
+
+            created_at = datetime.now()
+            with_recovery = "с возможностью восстановления" in (data.get("recovery_option") or "")
+            new_embed = _build_firing_embed(
+                discord_id=data["discord_id"],
+                full_name=data["full_name"],
+                rank=data.get("rank") or "—",
+                photo_link=data.get("photo_link") or "—",
+                with_recovery=with_recovery,
+                reason=data["reason"],
+                created_at=created_at,
+            )
             view = FiringView(user_id=data["discord_id"])
 
             role_mention = f"<@&{Config.FIRING_STAFF_ROLE_ID}>"
@@ -88,9 +98,10 @@ class WebhookHandler:
             firing_request = FiringRequest(
                 discord_id=data["discord_id"],
                 full_name=data["full_name"],
-                rank="",
+                rank=data.get("rank") or "",
                 reason=data["reason"],
-                recovery_option=data["recovery_option"]
+                recovery_option=data.get("recovery_option", "без возможности восстановления"),
+                photo_link=data.get("photo_link"),
             )
             firing_request.message_link = bot_msg.jump_url
 
@@ -127,7 +138,6 @@ class WebhookHandler:
             logger.error("❌ Ошибка process_firing (src_msg=%s): %s", message.id, e, exc_info=True)
 
     async def process_promotion(self, message: discord.Message, embed: discord.Embed):
-        """Обработка рапорта на повышение"""
         data = self._parse_promotion_embed(embed)
         if not data:
             logger.error("❌ Не удалось распарсить рапорт на повышение (msg_id=%s)", message.id)
@@ -260,7 +270,6 @@ class WebhookHandler:
         }
 
     def _parse_promotion_embed(self, embed: discord.Embed):
-        """Парсит embed повышения"""
         discord_id = None
         new_rank = None
         full_name = None

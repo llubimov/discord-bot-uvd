@@ -24,7 +24,8 @@ class StartView(View):
     @discord.ui.button(label="🟢 Курсант", style=discord.ButtonStyle.success, custom_id="cadet_role")
     async def cadet_button(self, interaction: discord.Interaction, button: Button):
         try:
-            await interaction.response.send_modal(CadetModal())
+            member = interaction.user if isinstance(interaction.user, discord.Member) else None
+            await interaction.response.send_modal(CadetModal(member=member))
         except Exception as e:
             logger.error("Ошибка в cadet_button: %s", e, exc_info=True)
             if interaction.response.is_done():
@@ -35,7 +36,8 @@ class StartView(View):
     @discord.ui.button(label="🔵 Перевод", style=discord.ButtonStyle.primary, custom_id="transfer_role")
     async def transfer_button(self, interaction: discord.Interaction, button: Button):
         try:
-            await interaction.response.send_modal(TransferModal())
+            member = interaction.user if isinstance(interaction.user, discord.Member) else None
+            await interaction.response.send_modal(TransferModal(member=member))
         except Exception as e:
             logger.error("Ошибка в transfer_button: %s", e, exc_info=True)
             if interaction.response.is_done():
@@ -46,7 +48,8 @@ class StartView(View):
     @discord.ui.button(label="⚪ Гос. Сотрудник", style=discord.ButtonStyle.secondary, custom_id="gov_role")
     async def gov_button(self, interaction: discord.Interaction, button: Button):
         try:
-            await interaction.response.send_modal(GovModal())
+            member = interaction.user if isinstance(interaction.user, discord.Member) else None
+            await interaction.response.send_modal(GovModal(member=member))
         except Exception as e:
             logger.error("Ошибка в gov_button: %s", e, exc_info=True)
             if interaction.response.is_done():

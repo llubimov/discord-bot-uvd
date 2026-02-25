@@ -37,8 +37,24 @@ intents.members = True
 
 bot = commands.Bot(command_prefix=Config.COMMAND_PREFIX, intents=intents)
 state.bot = bot
-# Синхронизацию slash-команд делаем только один раз (не на каждый reconnect)
 _tree_synced_once = False
+
+
+def _slash_require_role_above_bot(interaction: discord.Interaction) -> bool:
+    """Проверка: только пользователи с ролью выше роли бота могут использовать slash-команду."""
+    if not interaction.guild or not interaction.user:
+        return False
+    if not isinstance(interaction.user, discord.Member):
+        return False
+    me = interaction.guild.me
+    if not me:
+        return False
+    bot_top = me.top_role
+    user_top = interaction.user.top_role
+    if bot_top.position >= user_top.position:
+        return False
+    return True
+
 
 # ========== ИМПОРТ МОДУЛЕЙ ==========
 from database import init_db, delete_request
@@ -52,6 +68,13 @@ from services.startup_checks import run_startup_checks
 from services.health_report import run_health_report
 from services.diag_report import build_diag_embed
 from services.health_report import cleanup_orphan_records
+from services.position_apply_grom import ApplyGromPositionManager
+from services.position_apply_pps import ApplyPpsPositionManager
+from services.position_apply_osb import ApplyOsbPositionManager
+from services.position_apply_orls import ApplyOrlsPositionManager
+from services.position_apply_academy import AcademyApplyPositionManager
+from services.position_admin_transfer import AdminTransferPositionManager
+from services.firing_position_manager import FiringPositionManager
 
 # ========== ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ ==========
 state.role_cache = RoleCache(bot)
@@ -62,6 +85,13 @@ start_manager = StartPositionManager(bot)
 warehouse_position_manager = WarehousePositionManager(bot)
 cleanup_manager = CleanupManager(bot)
 view_restorer = ViewRestorer(bot)
+apply_grom_manager = ApplyGromPositionManager(bot)
+apply_pps_manager = ApplyPpsPositionManager(bot)
+apply_osb_manager = ApplyOsbPositionManager(bot)
+apply_orls_manager = ApplyOrlsPositionManager(bot)
+academy_apply_manager = AcademyApplyPositionManager(bot)
+admin_transfer_manager = AdminTransferPositionManager(bot)
+firing_position_manager = FiringPositionManager(bot)
 
 # Хранилище фоновых задач (защита от повторного запуска в on_ready)
 if not hasattr(state, "background_tasks") or not isinstance(getattr(state, "background_tasks", None), dict):
@@ -109,173 +139,84 @@ def _ensure_background_task(task_name: str, coro_factory: Callable[[], Awaitable
 
 
 # ============================================================================
-# ТЕКСТОВЫЕ КОМАНДЫ
+# SLASH-КОМАНДЫ (/) — только для пользователей с ролью выше роли бота
 # ============================================================================
 
-@bot.command(name="ping")
-async def ping_text(ctx):
-    """!ping - проверить работу бота"""
+NO_ROLE_ABOVE_BOT = "❌ Команда доступна только участникам с ролью выше роли бота."
+
+
+@bot.tree.command(name="ping", description="-")
+async def ping_slash(interaction: discord.Interaction):
+    if not _slash_require_role_above_bot(interaction):
+        await interaction.response.send_message(NO_ROLE_ABOVE_BOT, ephemeral=True)
+        return
     latency = round(bot.latency * 1000)
-    await ctx.send(f"🏓 Понг! Задержка: {latency}мс")
+    await interaction.response.send_message(f"🏓 Понг! Задержка: {latency}мс")
 
 
-@bot.command(name="info")
-async def info_text(ctx):
-    """!info - информация о боте"""
-    embed = discord.Embed(
-        title="🤖 Информация о боте",
-        description="Бот для автоматизации кадрового учета УВД",
-        color=discord.Color.blue()
-    )
-    embed.add_field(name="Версия", value="2.0.0", inline=True)
-    embed.add_field(name="Разработчик", value="llubimov", inline=True)
-
-    total = (
-        len(getattr(state, "active_requests", {}) or {}) +
-        len(getattr(state, "active_firing_requests", {}) or {}) +
-        len(getattr(state, "active_promotion_requests", {}) or {}) +
-        len(getattr(state, "warehouse_requests", {}) or {})
-    )
-    embed.add_field(name="Активных заявок", value=str(total), inline=True)
-
-    await ctx.send(embed=embed)
-
-
-@bot.command(name="help_uvd")
-async def help_uvd(ctx):
-    """!help_uvd - справка по боту"""
-    embed = discord.Embed(
-        title="📚 Помощь по боту УВД",
-        description="**Текстовые команды (с префиксом !):**",
-        color=discord.Color.gold()
-    )
-
-    embed.add_field(
-        name="Основные",
-        value=(
-            "`!ping` - Проверка связи\n"
-            "`!info` - Информация о боте\n"
-            "`!help_uvd` - Это меню"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="Админские",
-        value=(
-            "`!clear_firing [дни]` - Очистка старых заявок на увольнение\n"
-            "`!diag_clean_orphans` - Очистка записей\n"
-            "`!diag` - Диагностика\n"
-            "*(только для администраторов)*"
-        ),
-        inline=False
-    )
-
-    embed.add_field(
-        name="📋 Заявки и склад",
-        value=(
-            "Используйте **кнопки** в соответствующих каналах:\n"
-            "• Канал заявок — для поступления на службу\n"
-            "• Канал склада — для получения снаряжения"
-        ),
-        inline=False
-    )
-
-    await ctx.send(embed=embed)
-
-
-# ============================================================================
-# АДМИНСКИЕ КОМАНДЫ
-# ============================================================================
-
-@bot.command(name="diag_clean_orphans")
-@commands.has_permissions(administrator=True)
-async def diag_clean_orphans_command(ctx):
-    """!diag_clean_orphans - удалить записи из БД, у которых уже нет сообщений"""
-    try:
-        await ctx.send("🧹 Запускаю проверку и очистку лишних записей...")
-        await cleanup_orphan_records(bot, dry_run=False)
-        await ctx.send("✅ Очистка лишних записей завершена. Проверь лог/!diag.")
-    except Exception as e:
-        logger.error("Ошибка команды !diag_clean_orphans: %s", e, exc_info=True)
-        await ctx.send("❌ Ошибка при очистке лишних записей.")
-
-
-@diag_clean_orphans_command.error
-async def diag_clean_orphans_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ Эта команда доступна только администраторам.")
+@bot.tree.command(name="diag", description="-")
+async def diag_slash(interaction: discord.Interaction):
+    if not _slash_require_role_above_bot(interaction):
+        await interaction.response.send_message(NO_ROLE_ABOVE_BOT, ephemeral=True)
         return
-    logger.error("Ошибка команды !diag_clean_orphans (handler): %s", error, exc_info=True)
-    await ctx.send("❌ Ошибка выполнения команды.")
-
-
-@bot.command(name="diag")
-@commands.has_permissions(administrator=True)
-async def diag_command(ctx):
-    """!diag - диагностика бота (память, БД, каналы, роли, права)"""
     try:
+        await interaction.response.defer(ephemeral=True)
         embed = await build_diag_embed(bot)
-        await ctx.send(embed=embed)
+        await interaction.followup.send(embed=embed, ephemeral=True)
     except Exception as e:
-        logger.error("Ошибка команды !diag: %s", e, exc_info=True)
-        await ctx.send("❌ Ошибка при сборке диагностики.")
+        logger.error("Ошибка /diag: %s", e, exc_info=True)
+        await interaction.followup.send("❌ Ошибка при сборке диагностики.", ephemeral=True)
 
 
-@diag_command.error
-async def diag_command_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ Эта команда доступна только администраторам.")
+@bot.tree.command(name="diag_clean_orphans", description="-")
+async def diag_clean_orphans_slash(interaction: discord.Interaction):
+    if not _slash_require_role_above_bot(interaction):
+        await interaction.response.send_message(NO_ROLE_ABOVE_BOT, ephemeral=True)
         return
-    logger.error("Ошибка команды !diag (handler): %s", error, exc_info=True)
-    await ctx.send("❌ Ошибка выполнения команды.")
-
-
-@bot.command(name="clear_firing")
-@commands.has_permissions(administrator=True)
-async def clear_firing_requests(ctx, days: int = 7):
-    """!clear_firing [дни] - очистить старые заявки на увольнение (память + БД)"""
     try:
-        cutoff_date = datetime.now() - timedelta(days=days)
+        await interaction.response.defer(ephemeral=True)
+        await cleanup_orphan_records(bot, dry_run=False)
+        await interaction.followup.send("✅ Очистка лишних записей завершена.", ephemeral=True)
+    except Exception as e:
+        logger.error("Ошибка /diag_clean_orphans: %s", e, exc_info=True)
+        await interaction.followup.send("❌ Ошибка при очистке.", ephemeral=True)
 
+
+@bot.tree.command(name="clear_firing", description="-")
+async def clear_firing_slash(interaction: discord.Interaction, days: int = 7):
+    if not _slash_require_role_above_bot(interaction):
+        await interaction.response.send_message(NO_ROLE_ABOVE_BOT, ephemeral=True)
+        return
+    try:
+        await interaction.response.defer(ephemeral=True)
+        cutoff_date = datetime.now() - timedelta(days=days)
         to_delete = []
         for msg_id, request in (getattr(state, "active_firing_requests", {}) or {}).items():
             created_at = request.get("created_at")
             if not created_at:
                 to_delete.append(msg_id)
                 continue
-
             try:
                 if datetime.fromisoformat(created_at) < cutoff_date:
                     to_delete.append(msg_id)
             except Exception:
                 to_delete.append(msg_id)
-
         deleted_count = 0
         for msg_id in to_delete:
             state.active_firing_requests.pop(msg_id, None)
             await asyncio.to_thread(delete_request, "firing_requests", int(msg_id))
             deleted_count += 1
-
-        await ctx.send(f"✅ Удалено {deleted_count} старых заявок на увольнение (память + БД)")
-        logger.info("🧹 Админ очистил %s заявок на увольнение (память + БД)", deleted_count)
-
+        await interaction.followup.send(
+            f"✅ Удалено {deleted_count} старых заявок на увольнение (память + БД)",
+            ephemeral=True,
+        )
+        logger.info("🧹 Очистка заявок на увольнение через /clear_firing: %s", deleted_count)
     except Exception as e:
-        logger.error("Ошибка в clear_firing: %s", e, exc_info=True)
-        await ctx.send("❌ Ошибка при очистке")
+        logger.error("Ошибка /clear_firing: %s", e, exc_info=True)
+        await interaction.followup.send("❌ Ошибка при очистке.", ephemeral=True)
 
 
-@clear_firing_requests.error
-async def clear_firing_error(ctx, error):
-    if isinstance(error, commands.MissingPermissions):
-        await ctx.send("❌ Эта команда доступна только администраторам.")
-        return
-    if isinstance(error, commands.BadArgument):
-        await ctx.send("❌ Укажи число дней, например: `!clear_firing 7`")
-        return
-
-    logger.error("Ошибка команды !clear_firing: %s", error, exc_info=True)
-    await ctx.send("❌ Ошибка выполнения команды.")
+# ============================================================================
 
 
 # ============================================================================
@@ -291,25 +232,24 @@ async def on_ready():
     logger.info("=" * 60)
 
     # 1) База данных
-    await asyncio.to_thread(init_db)
-    logger.info("✅ База данных подключена")
+    try:
+        await asyncio.to_thread(init_db)
+        logger.info("✅ База данных подключена")
+    except Exception as e:
+        logger.critical("❌ Не удалось инициализировать БД (путь/права?): %s", e, exc_info=True)
+        raise
 
-    # 2) Синхронизация команд (только один раз)
+    # 2) Синхронизация slash-команд (только один раз). Одна синхронизация — глобальная, чтобы в Discord отображались только текущие 4 команды (без старых /info, /help_uvd).
     global _tree_synced_once
     if not _tree_synced_once:
         try:
             synced = await bot.tree.sync()
+            logger.info("✅ Синхронизировано %s slash-команд: %s", len(synced), [c.name for c in synced])
             _tree_synced_once = True
-            logger.info("✅ Синхронизировано %s команд: %s", len(synced), [cmd.name for cmd in synced])
         except Exception as e:
-            logger.error("❌ Ошибка синхронизации команд: %s", e, exc_info=True)
+            logger.error("❌ Ошибка синхронизации slash-команд: %s", e, exc_info=True)
     else:
         logger.info("ℹ️ Синхронизация команд пропущена (уже выполнена ранее)")
-    
-        
-        
-    
-        
 
     # 3) Восстановление view
     try:
@@ -322,6 +262,8 @@ async def on_ready():
     try:
         await run_startup_checks(bot)
         await run_health_report(bot)
+        if Config.GUILD_ID and not bot.get_guild(Config.GUILD_ID):
+            logger.critical("⚠️ GUILD_ID=%s не найден — укажите правильный ID сервера в .env", Config.GUILD_ID)
     except Exception as e:
         logger.error("❌ Ошибка стартовой диагностики: %s", e, exc_info=True)
 
@@ -329,6 +271,20 @@ async def on_ready():
     _ensure_background_task("start_position_checker", start_manager.start_checking)
     _ensure_background_task("warehouse_position_checker", warehouse_position_manager.start_checking)
     _ensure_background_task("cleanup_manager", cleanup_manager.start_cleanup)
+    if getattr(Config, "CHANNEL_APPLY_GROM", 0):
+        _ensure_background_task("apply_grom_position_checker", apply_grom_manager.start_checking)
+    if getattr(Config, "CHANNEL_APPLY_PPS", 0):
+        _ensure_background_task("apply_pps_position_checker", apply_pps_manager.start_checking)
+    if getattr(Config, "CHANNEL_APPLY_OSB", 0):
+        _ensure_background_task("apply_osb_position_checker", apply_osb_manager.start_checking)
+    if getattr(Config, "CHANNEL_APPLY_ORLS", 0):
+        _ensure_background_task("apply_orls_position_checker", apply_orls_manager.start_checking)
+    if getattr(Config, "ACADEMY_CHANNEL_ID", 0) and getattr(Config, "ROLE_ACADEMY", 0):
+        _ensure_background_task("academy_apply_position_checker", academy_apply_manager.start_checking)
+    if getattr(Config, "CHANNEL_ADMIN_TRANSFER", 0):
+        _ensure_background_task("admin_transfer_position_checker", admin_transfer_manager.start_checking)
+    if getattr(Config, "FIRING_CHANNEL_ID", 0):
+        _ensure_background_task("firing_position_checker", firing_position_manager.start_checking)
 
     logger.info("=" * 60)
     logger.info("✅ БОТ ГОТОВ К РАБОТЕ")
@@ -341,7 +297,6 @@ async def on_ready():
 
 @bot.event
 async def on_message(message):
-    """Обрабатывает входящие сообщения"""
     if message.author == bot.user:
         return
 
@@ -354,6 +309,16 @@ async def on_message(message):
         return
 
     await bot.process_commands(message)
+
+
+@bot.event
+async def on_member_remove(member: discord.Member):
+    try:
+        from modals.firing_apply_modal import post_auto_firing_report
+        await post_auto_firing_report(member)
+    except Exception as e:
+        logger.warning("Ошибка при авто-рапорте увольнения (member_remove): %s", e, exc_info=True)
+
 
 # ============================================================================
 # ЗАПУСК БОТА

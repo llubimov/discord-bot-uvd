@@ -8,6 +8,11 @@ from views.start_view import StartView
 from views.warehouse_start import WarehouseStartView
 from views.request_view import RequestView
 from views.warehouse_request_buttons import WarehouseRequestView
+from views.department_approval_view import DepartmentApprovalView
+from views.apply_channel_view import ApplyChannelView
+from views.academy_apply_view import AcademyApplyView
+from services.position_admin_transfer import AdminTransferView
+from services.firing_position_manager import FiringStartView
 
 import state
 from config import Config
@@ -17,7 +22,9 @@ from database import (
     load_all_firing_requests,
     load_all_promotion_requests,
     load_all_warehouse_requests,
+    load_all_department_transfer_requests,
     delete_request,
+    delete_department_transfer_request,
 )
 
 logger = logging.getLogger(__name__)
@@ -37,12 +44,21 @@ class ViewRestorer:
         await self._restore_firing_views()
         await self._restore_promotion_views()
         await self._restore_warehouse_views()
+        await self._restore_department_transfer_views()
 
         logger.info("✅ Восстановление View завершено")
 
     def _restore_start_views(self):
         self.bot.add_view(StartView())
         self.bot.add_view(WarehouseStartView())
+        # Заявки на перевод между отделами (персистентные view для кнопок в шапке каналов)
+        self.bot.add_view(ApplyChannelView("grom", [("pps", "「ППС」"), ("orls", "「ОРЛС」"), ("osb", "「ОСБ」")]))
+        self.bot.add_view(ApplyChannelView("pps", [("grom", "「ГРОМ」"), ("orls", "「ОРЛС」"), ("osb", "「ОСБ」")]))
+        self.bot.add_view(ApplyChannelView("osb", [("pps", "「ППС」"), ("orls", "「ОРЛС」"), ("grom", "「ГРОМ」")]))
+        self.bot.add_view(ApplyChannelView("orls", [("pps", "「ППС」"), ("grom", "「ГРОМ」"), ("osb", "「ОСБ」")]))
+        self.bot.add_view(AcademyApplyView())
+        self.bot.add_view(AdminTransferView())
+        self.bot.add_view(FiringStartView())
         logger.info("🔄 Стартовые View восстановлены")
 
     async def _load_requests_from_db(self):
@@ -51,17 +67,18 @@ class ViewRestorer:
         state.active_firing_requests = await asyncio.to_thread(load_all_firing_requests)
         state.active_promotion_requests = await asyncio.to_thread(load_all_promotion_requests)
         state.warehouse_requests = await asyncio.to_thread(load_all_warehouse_requests)
+        state.active_department_transfers = await asyncio.to_thread(load_all_department_transfer_requests)
 
         logger.info(
-            "📦 Загружено из БД: заявок=%s, увольнений=%s, повышений=%s, склад=%s",
+            "📦 Загружено из БД: заявок=%s, увольнений=%s, повышений=%s, склад=%s, переводы=%s",
             len(getattr(state, "active_requests", {}) or {}),
             len(getattr(state, "active_firing_requests", {}) or {}),
             len(getattr(state, "active_promotion_requests", {}) or {}),
             len(getattr(state, "warehouse_requests", {}) or {}),
+            len(getattr(state, "active_department_transfers", {}) or {}),
         )
 
     async def _delete_orphan(self, storage: dict, table_name: str, msg_id, reason: str = ""):
-        """Удаляет битую/осиротевшую запись из памяти и БД."""
         try:
             msg_id_int = int(msg_id)
         except (TypeError, ValueError):
@@ -314,5 +331,79 @@ class ViewRestorer:
 
         logger.info(
             "🔨 Восстановлено кнопок склада: %s | удалено из БД: %s | пропущено: %s",
+            restored, deleted, skipped
+        )
+
+    async def _restore_department_transfer_views(self):
+        restored = 0
+        deleted = 0
+        skipped = 0
+
+        apply_channel_ids = []
+        for name in ("CHANNEL_APPLY_GROM", "CHANNEL_APPLY_PPS", "CHANNEL_APPLY_OSB", "CHANNEL_APPLY_ORLS"):
+            ch_id = getattr(Config, name, 0)
+            if ch_id:
+                apply_channel_ids.append(ch_id)
+
+        for msg_id, data in list((getattr(state, "active_department_transfers", {}) or {}).items()):
+            try:
+                msg_id_int = int(msg_id)
+            except (TypeError, ValueError):
+                logger.warning("⚠️ Битый message_id в active_department_transfers: %r", msg_id)
+                skipped += 1
+                continue
+
+            approved_src = int(data.get("approved_source") or 0)
+            approved_tgt = int(data.get("approved_target") or 0)
+            if approved_src and approved_tgt:
+                skipped += 1
+                continue
+
+            found = False
+            found_channel_id = 0
+            for ch_id in apply_channel_ids:
+                ch = self.bot.get_channel(ch_id)
+                if not ch:
+                    continue
+                try:
+                    await ch.fetch_message(msg_id_int)
+                    found = True
+                    found_channel_id = ch_id
+                    break
+                except discord.NotFound:
+                    continue
+                except (discord.Forbidden, discord.HTTPException):
+                    continue
+
+            if not found:
+                state.active_department_transfers.pop(msg_id_int, None)
+                try:
+                    await asyncio.to_thread(delete_department_transfer_request, msg_id_int)
+                    deleted += 1
+                except Exception as e:
+                    logger.warning("⚠️ Не удалось удалить осиротевшую заявку перевод msg_id=%s: %s", msg_id_int, e)
+                    skipped += 1
+                continue
+
+            try:
+                view = DepartmentApprovalView(
+                    message_id=msg_id_int,
+                    user_id=int(data.get("user_id", 0)),
+                    target_dept=str(data.get("target_dept", "")),
+                    source_dept=str(data.get("source_dept", "")),
+                    from_academy=bool(data.get("from_academy")),
+                    form_data=dict(data.get("data") or {}),
+                    approved_source=approved_src,
+                    approved_target=approved_tgt,
+                    channel_id=found_channel_id,
+                )
+                self.bot.add_view(view, message_id=msg_id_int)
+                restored += 1
+            except Exception as e:
+                logger.warning("⚠️ Ошибка восстановления заявки перевод msg_id=%s: %s", msg_id_int, e, exc_info=True)
+                skipped += 1
+
+        logger.info(
+            "🔨 Восстановлено кнопок заявок на перевод: %s | удалено из БД: %s | пропущено: %s",
             restored, deleted, skipped
         )

@@ -7,7 +7,7 @@ import re
 from config import Config
 from views.message_texts import ErrorMessages
 from state import active_promotion_requests
-from utils.rate_limiter import apply_role_changes, safe_discord_call
+from utils.rate_limiter import apply_role_changes
 from utils.embed_utils import copy_embed, add_officer_field, update_embed_status
 from services.audit import send_to_audit
 from services.action_locks import action_lock
@@ -259,18 +259,6 @@ class PromotionView(View):
                 except Exception:
                     pass
 
-                # Академия / ППС логика
-                if interaction.channel.id == Config.ACADEMY_CHANNEL_ID:
-                    try:
-                        await self._handle_academy_promotion(member, interaction)
-                    except discord.Forbidden:
-                        await interaction.followup.send("❌ У бота нет прав завершить перевод из академии.", ephemeral=True)
-                        return
-                    except discord.HTTPException as e:
-                        logger.warning("Promotion academy: HTTP ошибка user=%s: %s", member.id, e, exc_info=True)
-                        await interaction.followup.send("❌ Ошибка Discord API при обработке академии.", ephemeral=True)
-                        return
-
                 # Аудит
                 rank_for_audit = self.new_rank
                 try:
@@ -299,15 +287,6 @@ class PromotionView(View):
                     )
                     embed.add_field(name="новое звание", value=self.new_rank, inline=True)
                     embed.add_field(name="принял", value=interaction.user.mention, inline=True)
-
-                    if interaction.channel.id == Config.ACADEMY_CHANNEL_ID:
-                        is_non_pps = any(rank in self.new_rank.lower() for rank in Config.NON_PPS_RANKS)
-                        if not is_non_pps:
-                            embed.add_field(
-                                name="новый ник",
-                                value=f"`{Config.PPS_NICKNAME_PREFIX} {self.full_name}`",
-                                inline=False
-                            )
 
                     await member.send(embed=embed)
                 except discord.Forbidden:
@@ -377,32 +356,3 @@ class PromotionView(View):
         except Exception as e:
             logger.error("Ошибка при принятии рапорта на повышение: %s", e, exc_info=True)
             await interaction.followup.send(ErrorMessages.GENERIC, ephemeral=True)
-
-    async def _handle_academy_promotion(self, member: discord.Member, interaction: discord.Interaction):
-        is_non_pps = any(rank in self.new_rank.lower() for rank in Config.NON_PPS_RANKS)
-        if not is_non_pps:
-            academy_roles = [
-                interaction.guild.get_role(rid)
-                for rid in Config.CADET_ROLES_TO_GIVE
-                if interaction.guild.get_role(rid)
-            ]
-            if academy_roles:
-                await apply_role_changes(member, remove=academy_roles)
-
-            pps_roles = [
-                interaction.guild.get_role(rid)
-                for rid in Config.PPS_ROLE_IDS
-                if interaction.guild.get_role(rid)
-            ]
-            if pps_roles:
-                await apply_role_changes(member, add=pps_roles)
-
-            try:
-                new_nick = f"{Config.PPS_NICKNAME_PREFIX} {self.full_name}"
-                await safe_discord_call(member.edit, nick=new_nick)
-            except discord.Forbidden:
-                logger.warning("Нет прав на смену ника при академическом повышении user=%s", member.id)
-            except discord.HTTPException as e:
-                logger.warning("HTTP ошибка при смене ника на ППС user=%s: %s", member.id, e, exc_info=True)
-            except Exception as e:
-                logger.error("Ошибка при смене ника на ППС: %s", e, exc_info=True)

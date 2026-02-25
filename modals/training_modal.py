@@ -6,26 +6,31 @@ from constants import ExamMessages
 
 logger = logging.getLogger(__name__)
 
+
+def _exam_name_default(member):
+    if not member:
+        return ""
+    from utils.member_display import get_member_full_name
+    return get_member_full_name(member)
+
+
 class ExamModal(Modal):
-    """Модалка для отправки на экзамен"""
-    
-    def __init__(self):
+    def __init__(self, member=None):
         super().__init__(title="🎓 ЗАПИСЬ НА ЭКЗАМЕН")
-        
+        name_default = _exam_name_default(member)
         self.name = TextInput(
             label="Ваше имя и фамилия",
             placeholder="Иван Петров",
             required=True,
-            max_length=50
+            max_length=50,
+            default=name_default,
         )
         self.add_item(self.name)
     
     async def on_submit(self, interaction: discord.Interaction):
-        """Отправляет уведомление с кнопкой"""
         from datetime import datetime
         import random
-        
-        # Формируем текст
+
         text = ExamMessages.EXAM_NOTIFICATION.format(
             header=ExamMessages.HEADER,
             date=datetime.now().strftime("«%d» %B %Y года"),

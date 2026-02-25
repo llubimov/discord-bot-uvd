@@ -5,8 +5,8 @@ from enums import RequestType
 from constants import FieldNames, StatusValues
 
 class TransferModal(BaseRequestModal, RankMixin, ApprovalMixin):
-    def __init__(self):
-        super().__init__("заявка на перевод", RequestType.TRANSFER)
+    def __init__(self, member=None):
+        super().__init__("заявка на перевод", RequestType.TRANSFER, member=member)
         self.add_rank_field()
         self.add_approval_field()
 

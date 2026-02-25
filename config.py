@@ -6,7 +6,6 @@ load_dotenv()
 
 
 def _env_int(name: str, default: int = 0) -> int:
-    """Безопасно читает int из .env"""
     raw = str(os.getenv(name, "")).strip()
     if not raw:
         return default
@@ -17,11 +16,9 @@ def _env_int(name: str, default: int = 0) -> int:
 
 
 def _parse_int_list(raw: str) -> list[int]:
-    """Парсит список ID из строки вида 1,2,3"""
     result: list[int] = []
     if not raw:
         return result
-
     for part in str(raw).split(","):
         part = part.strip()
         if not part:
@@ -30,22 +27,22 @@ def _parse_int_list(raw: str) -> list[int]:
             result.append(int(part))
         except ValueError:
             continue
-
     return result
 
+
 def _env_bool(name: str, default: bool = False) -> bool:
-    """Безопасно читает bool из .env"""
     raw = str(os.getenv(name, "")).strip().lower()
     if not raw:
         return default
 
     return raw in {"1", "true", "yes", "y", "on", "да"}
 
+
+def _env_str(name: str, default: str = "") -> str:
+    return (os.getenv(name, "") or "").strip() or default
+
+
 def _parse_prefixed_int_list(prefix: str) -> list[int]:
-    """
-    Читает переменные окружения вида PREFIX_01=123, PREFIX_02=456...
-    Возвращает список ID, отсортированный по имени переменной.
-    """
     pairs: list[tuple[str, int]] = []
 
     for key, value in os.environ.items():
@@ -62,10 +59,6 @@ def _parse_prefixed_int_list(prefix: str) -> list[int]:
 
 
 def _get_list_from_env(prefix: str, legacy_var: str) -> list[int]:
-    """
-    Сначала пробует новый формат PREFIX_01, PREFIX_02...
-    Если не найдено — берёт старый CSV-формат из legacy_var.
-    """
     prefixed = _parse_prefixed_int_list(prefix)
     if prefixed:
         return prefixed
@@ -74,10 +67,6 @@ def _get_list_from_env(prefix: str, legacy_var: str) -> list[int]:
 
 
 def _parse_promotion_channels_legacy(raw: str) -> dict[int, int]:
-    """
-    Старый формат:
-    PROMOTION_CHANNELS=channel_id:staff_role_id,channel_id:staff_role_id
-    """
     result: dict[int, int] = {}
     if not raw:
         return result
@@ -97,11 +86,6 @@ def _parse_promotion_channels_legacy(raw: str) -> dict[int, int]:
 
 
 def _parse_prefixed_channel_role_map(prefix: str) -> dict[int, int]:
-    """
-    Новый формат:
-    PROMOTION_CH_01=channel_id:role_id
-    PROMOTION_CH_02=channel_id:role_id
-    """
     result: dict[int, int] = {}
 
     for key, value in os.environ.items():
@@ -122,10 +106,6 @@ def _parse_prefixed_channel_role_map(prefix: str) -> dict[int, int]:
 
 
 def _parse_rank_role_mapping_legacy(raw: str) -> dict[str, int]:
-    """
-    Старый формат:
-    RANK_ROLE_MAPPING=Текст повышения:ID,Текст повышения:ID
-    """
     result: dict[str, int] = {}
     if not raw:
         return result
@@ -158,11 +138,6 @@ def _parse_rank_role_mapping_legacy(raw: str) -> dict[str, int]:
 
 
 def _parse_prefixed_rank_role_mapping(prefix: str) -> dict[str, int]:
-    """
-    Новый формат:
-    RANKMAP_01=Текст повышения:ID
-    RANKMAP_02=Текст повышения:ID
-    """
     result: dict[str, int] = {}
 
     for key, value in sorted(os.environ.items()):
@@ -244,6 +219,43 @@ class Config:
     ACADEMY_CHANNEL_ID = _env_int("ACADEMY_CHANNEL_ID", 0)
     EXAM_CHANNEL_ID = _env_int("EXAM_CHANNEL_ID", 0)
 
+    # Каналы заявок на перевод между отделами и админ-перевод
+    CHANNEL_APPLY_GROM = _env_int("CHANNEL_APPLY_GROM", 0)
+    CHANNEL_APPLY_PPS = _env_int("CHANNEL_APPLY_PPS", 0)
+    CHANNEL_APPLY_OSB = _env_int("CHANNEL_APPLY_OSB", 0)
+    CHANNEL_APPLY_ORLS = _env_int("CHANNEL_APPLY_ORLS", 0)
+    CHANNEL_ADMIN_TRANSFER = _env_int("CHANNEL_ADMIN_TRANSFER", 0)
+    CHANNEL_CADRE_LOG = _env_int("CHANNEL_CADRE_LOG", 0)
+
+    # Роли начальников/замов отделов (для одобрения заявок и админ-перевода)
+    ROLE_CHIEF_GROM = _env_int("ROLE_CHIEF_GROM", 0)
+    ROLE_DEPUTY_GROM = _env_int("ROLE_DEPUTY_GROM", 0)
+    ROLE_CHIEF_PPS = _env_int("ROLE_CHIEF_PPS", 0)
+    ROLE_DEPUTY_PPS = _env_int("ROLE_DEPUTY_PPS", 0)
+    ROLE_CHIEF_OSB = _env_int("ROLE_CHIEF_OSB", 0)
+    ROLE_DEPUTY_OSB = _env_int("ROLE_DEPUTY_OSB", 0)
+    ROLE_CHIEF_ORLS = _env_int("ROLE_CHIEF_ORLS", 0)
+    ROLE_DEPUTY_ORLS = _env_int("ROLE_DEPUTY_ORLS", 0)
+
+    # Роли отделов (снять/выдать при переводе)
+    ROLE_DEPT_GROM = _env_int("ROLE_DEPT_GROM", 0)
+    ROLE_DEPT_PPS = _env_int("ROLE_DEPT_PPS", 0)
+    ROLE_DEPT_OSB = _env_int("ROLE_DEPT_OSB", 0)
+    ROLE_DEPT_ORLS = _env_int("ROLE_DEPT_ORLS", 0)
+
+    # Ранги отделов (списки: ROLE_RANK_GROM_01, ROLE_RANK_GROM_02 и т.д.; один ранг — ROLE_RANK_GROM_01)
+    ROLE_RANK_GROM = _get_list_from_env("ROLE_RANK_GROM_", "ROLE_RANK_GROM")
+    ROLE_RANK_PPS = _get_list_from_env("ROLE_RANK_PPS_", "ROLE_RANK_PPS")
+    ROLE_RANK_OSB = _get_list_from_env("ROLE_RANK_OSB_", "ROLE_RANK_OSB")
+    ROLE_RANK_ORLS = _get_list_from_env("ROLE_RANK_ORLS_", "ROLE_RANK_ORLS")
+
+    # Роль Академии (заявка «из Академии» — автодобро ППС, для ГРОМ/ОРЛС/ОСБ можно отклонить)
+    ROLE_ACADEMY = _env_int("ROLE_ACADEMY", 0)
+
+    # Роли отдела и рангов Академии (снимаются при переводе из Академии в любой отдел)
+    ROLE_DEPT_ACADEMY = _env_int("ROLE_DEPT_ACADEMY", 0)
+    ROLE_RANK_ACADEMY = _get_list_from_env("ROLE_RANK_ACADEMY_", "ROLE_RANK_ACADEMY")
+
     # Каналы повышений (новый формат: PROMOTION_CH_01=channel_id:role_id; старый PROMOTION_CHANNELS тоже поддерживается)
     PROMOTION_CHANNELS = _parse_prefixed_channel_role_map("PROMOTION_CH_")
     if not PROMOTION_CHANNELS:
@@ -262,11 +274,18 @@ class Config:
     EXAM_BUTTON_TIMEOUT = _env_int("EXAM_BUTTON_TIMEOUT", 120)
 
     # Префиксы ников
-    CADET_NICKNAME_PREFIX = "Курсант |"
-    TRANSFER_NICKNAME_PREFIX = "Переаттестация |"
-    GOV_NICKNAME_PREFIX = "Гос. |"
-    FIRING_NICKNAME_PREFIX = "Уволен |"
-    PPS_NICKNAME_PREFIX = "ППС |"
+    CADET_NICKNAME_PREFIX = os.getenv("CADET_NICKNAME_PREFIX", "Курсант |").strip()
+    TRANSFER_NICKNAME_PREFIX = os.getenv("TRANSFER_NICKNAME_PREFIX", "Переаттестация |").strip()
+    GOV_NICKNAME_PREFIX = os.getenv("GOV_NICKNAME_PREFIX", "Гос. |").strip()
+    FIRING_NICKNAME_PREFIX = _env_str("FIRING_NICKNAME_PREFIX", "Уволен |")
+    PPS_NICKNAME_PREFIX = _env_str("PPS_NICKNAME_PREFIX", "ППС |")
+
+    # Увольнение: шапка канала и кнопка (из .env)
+    FIRING_HEADER_TITLE = _env_str("FIRING_HEADER_TITLE", "РАПОРТ НА УВОЛЬНЕНИЕ")
+    FIRING_HEADER_DESC = _env_str("FIRING_HEADER_DESC", "Пожалуйста, подайте заявление о вашем увольнении через эту форму.")
+    FIRING_BUTTON_LABEL = _env_str("FIRING_BUTTON_LABEL", "ПОДАТЬ ЗАЯВЛЕНИЕ НА УВОЛЬНЕНИЕ")
+    FIRING_MODAL_TITLE = _env_str("FIRING_MODAL_TITLE", "Заявление на увольнение")
+    FIRING_AUTO_REASON = _env_str("FIRING_AUTO_REASON", "Автоматический рапорт при выходе с сервера")
 
     # Маппинг текста повышения -> ID роли (новый формат: RANKMAP_01=Текст:ID; старый RANK_ROLE_MAPPING тоже поддерживается)
     RANK_ROLE_MAPPING = _parse_prefixed_rank_role_mapping("RANKMAP_")

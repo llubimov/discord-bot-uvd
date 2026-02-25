@@ -57,8 +57,9 @@ class CleanupManager:
             self._cleanup_store_by_date(getattr(state, "active_firing_requests", {}), "увольнения", cutoff)
             self._cleanup_store_by_date(getattr(state, "active_promotion_requests", {}), "повышения", cutoff)
             self._cleanup_store_by_date(getattr(state, "warehouse_requests", {}), "склад", cutoff)
+            self._cleanup_store_by_date(getattr(state, "active_department_transfers", {}), "переводы отделов", cutoff)
 
-            # Очистка БД (один вызов чистит ВСЕ таблицы, включая warehouse_requests)
+            # Очистка БД (все таблицы, включая department_transfer_requests)
             await asyncio.to_thread(cleanup_old_requests_db, Config.REQUEST_EXPIRY_DAYS)
 
             logger.info("🧹 Периодическая очистка завершена")

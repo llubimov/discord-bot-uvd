@@ -9,46 +9,48 @@ from database import (
     load_all_firing_requests,
     load_all_promotion_requests,
     load_all_warehouse_requests,
+    load_all_department_transfer_requests,
     delete_request,
+    delete_department_transfer_request,
 )
 
 logger = logging.getLogger(__name__)
 
 
 def log_memory_state():
-    """Короткая сводка по состоянию памяти (state)."""
     try:
         logger.info(
-            "📊 ПАМЯТЬ | заявки=%s | увольнения=%s | повышения=%s | склад=%s",
+            "📊 ПАМЯТЬ | заявки=%s | увольнения=%s | повышения=%s | склад=%s | переводы=%s",
             len(getattr(state, "active_requests", {}) or {}),
             len(getattr(state, "active_firing_requests", {}) or {}),
             len(getattr(state, "active_promotion_requests", {}) or {}),
             len(getattr(state, "warehouse_requests", {}) or {}),
+            len(getattr(state, "active_department_transfers", {}) or {}),
         )
     except Exception as e:
         logger.error("Отчёт состояния: ошибка чтения памяти (state): %s", e, exc_info=True)
 
 
 def _load_all_tables_for_report():
-    """Синхронная загрузка таблиц БД для отчёта (вызывается в отдельном потоке)."""
     req = load_all_requests()
     fir = load_all_firing_requests()
     pro = load_all_promotion_requests()
     wh = load_all_warehouse_requests()
-    return req, fir, pro, wh
+    dept = load_all_department_transfer_requests()
+    return req, fir, pro, wh, dept
 
 
 async def log_db_state():
-    """Короткая сводка по БД (не блокирует event loop)."""
     try:
-        req, fir, pro, wh = await asyncio.to_thread(_load_all_tables_for_report)
+        req, fir, pro, wh, dept = await asyncio.to_thread(_load_all_tables_for_report)
 
         logger.info(
-            "🗄️ БАЗА   | заявки=%s | увольнения=%s | повышения=%s | склад=%s",
+            "🗄️ БАЗА   | заявки=%s | увольнения=%s | повышения=%s | склад=%s | переводы=%s",
             len(req),
             len(fir),
             len(pro),
             len(wh),
+            len(dept),
         )
     except Exception as e:
         logger.error("Отчёт состояния: ошибка чтения БД: %s", e, exc_info=True)
@@ -65,14 +67,6 @@ async def _validate_message_exists(channel: discord.TextChannel, message_id: int
 
 
 async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
-    """
-    Проверка 'осиротевших' записей:
-    - запись есть в БД
-    - сообщения в канале уже нет
-
-    dry_run=True  -> только логируем
-    dry_run=False -> удаляем из БД
-    """
     logger.info("🧹 Проверка осиротевших записей (только проверка=%s)...", dry_run)
 
     try:
@@ -129,6 +123,28 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
                 if not dry_run:
                     await asyncio.to_thread(delete_request, "promotion_requests", int(msg_id))
 
+        # Заявки на перевод между отделами
+        apply_channel_ids = [
+            getattr(Config, "CHANNEL_APPLY_GROM", 0),
+            getattr(Config, "CHANNEL_APPLY_PPS", 0),
+            getattr(Config, "CHANNEL_APPLY_OSB", 0),
+            getattr(Config, "CHANNEL_APPLY_ORLS", 0),
+        ]
+        apply_channel_ids = [c for c in apply_channel_ids if c]
+        dept_transfers = await asyncio.to_thread(load_all_department_transfer_requests)
+        for msg_id in list(dept_transfers.keys()):
+            found = False
+            for ch_id in apply_channel_ids:
+                ch = bot.get_channel(ch_id)
+                if ch and await _validate_message_exists(ch, int(msg_id)):
+                    found = True
+                    break
+            if not found:
+                logger.warning("🧹 ЛИШНЯЯ ЗАПИСЬ (заявка перевод): message_id=%s (сообщение удалено)", msg_id)
+                if not dry_run:
+                    await asyncio.to_thread(delete_department_transfer_request, int(msg_id))
+                    state.active_department_transfers.pop(int(msg_id), None)
+
         logger.info("🧹 Проверка лишних записей завершена")
 
     except Exception as e:
@@ -136,12 +152,6 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
 
 
 async def run_health_report(bot: discord.Client):
-    """
-    Запуск краткого отчёта о состоянии:
-    1) Память (state)
-    2) БД
-    3) Проверка лишних записей (только лог)
-    """
     logger.info("========== ОТЧЁТ О СОСТОЯНИИ ==========")
     log_memory_state()
     await log_db_state()

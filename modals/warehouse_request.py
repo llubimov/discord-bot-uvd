@@ -1,14 +1,12 @@
 import discord
 from discord.ui import Modal, TextInput
 import logging
-from data.warehouse_items import WAREHOUSE_ITEMS
+from data.warehouse_items import WAREHOUSE_ITEMS, CATEGORY_EMOJIS
 
 logger = logging.getLogger(__name__)
 
 
 class QuantityModal(Modal):
-    """Модалка для ввода количества"""
-
     def __init__(
         self,
         category: str,
@@ -17,15 +15,8 @@ class QuantityModal(Modal):
         request_owner_id: int | None = None,
         editing_request_message_id: int | None = None,
     ):
-        category_emojis = {
-            "оружие": "🔫",
-            "бронежилеты": "🛡️",
-            "медикаменты": "💊",
-            "расходуемое": "📦"
-        }
-        emoji = category_emojis.get(category.lower(), "📦")
-
-        super().__init__(title=f"{emoji} {category} • {item_name}")
+        emoji = CATEGORY_EMOJIS.get(category, "📦")
+        super().__init__(title=f"{emoji} {item_name}")
         self.category = category
         self.item_name = item_name
         self.session_key = session_key
@@ -42,8 +33,8 @@ class QuantityModal(Modal):
             unit = item_data.get("unit", "шт")
 
         self.quantity = TextInput(
-            label=f"Количество (макс {max_value} {unit}):",
-            placeholder=f"Введи число от 1 до {max_value}...",
+            label="Количество",
+            placeholder=f"От 1 до {max_value} {unit}",
             required=True,
             min_length=1,
             max_length=4
@@ -51,7 +42,6 @@ class QuantityModal(Modal):
         self.add_item(self.quantity)
 
     async def on_submit(self, interaction: discord.Interaction):
-        """Сохраняем выбранный предмет в корзину"""
         try:
             quantity = int(self.quantity.value)
 
@@ -90,18 +80,9 @@ class QuantityModal(Modal):
                 await interaction.response.send_message(error_msg, ephemeral=True)
                 return
 
-            if self.editing_request_message_id:
-                await interaction.response.send_message(
-                    f"✅ **{self.item_name}** x{quantity} добавлено в корзину редактирования!\n"
-                    f"🛒 Открой окно корзины редактирования и продолжай изменения.",
-                    ephemeral=True
-                )
-            else:
-                await interaction.response.send_message(
-                    f"✅ **{self.item_name}** x{quantity} добавлено в корзину!\n"
-                    f"🛒 Чтобы посмотреть корзину или отправить запрос - нажми кнопку **«МОЯ КОРЗИНА»** в канале.",
-                    ephemeral=True
-                )
+            # Успешное добавление не засоряет всплывающими сообщениями
+            # Просто подтверждаем действие без текста
+            await interaction.response.defer(ephemeral=True)
 
         except ValueError:
             await interaction.response.send_message(

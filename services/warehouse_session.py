@@ -11,11 +11,8 @@ user_sessions: Dict[Hashable, Dict[str, Any]] = {}
 
 
 class WarehouseSession:
-    """Работа с корзиной пользователя / временной сессией склада"""
-
     @staticmethod
     def purge_expired(max_age_hours: int = 24) -> int:
-        """Удаляет старые сессии корзины, чтобы не копить память бесконечно."""
         cutoff = datetime.now() - timedelta(hours=max_age_hours)
         to_delete = []
 
@@ -34,7 +31,6 @@ class WarehouseSession:
 
     @staticmethod
     def get_session(session_key: Hashable) -> Dict[str, Any]:
-        # Лёгкая авто-очистка при любом обращении
         WarehouseSession.purge_expired(24)
 
         if session_key not in user_sessions:
@@ -46,7 +42,6 @@ class WarehouseSession:
 
     @staticmethod
     def set_items(session_key: Hashable, items: List[Dict[str, Any]]):
-        """Полностью заменяет содержимое корзины (с копией списка)."""
         session = WarehouseSession.get_session(session_key)
         session["items"] = [dict(item) for item in (items or [])]
 
@@ -54,7 +49,6 @@ class WarehouseSession:
     def add_item(session_key: Hashable, category: str, item_name: str, quantity: int) -> Tuple[bool, str]:
         session = WarehouseSession.get_session(session_key)
 
-        # Получаем данные из warehouse_items.py
         category_data = WAREHOUSE_ITEMS[category]
         item_limit = category_data["items"][item_name]
 
@@ -64,7 +58,6 @@ class WarehouseSession:
         else:
             max_item = int(item_limit)
 
-        # Считаем сколько уже есть ЭТОГО ЖЕ предмета
         current_qty = 0
         for item in session["items"]:
             if item.get("category") == category and item.get("item") == item_name:
@@ -73,11 +66,9 @@ class WarehouseSession:
                 except (TypeError, ValueError):
                     continue
 
-        # Проверка лимита конкретного предмета
         if current_qty + quantity > max_item:
             return False, f"❌ Нельзя взять больше **{max_item}** {item_name} в один запрос!"
 
-        # Проверка общего лимита категории (например 3 для оружия, 20 для брони)
         if "max_total" in category_data:
             total_in_category = 0
             for item in session["items"]:
@@ -91,7 +82,6 @@ class WarehouseSession:
             if total_in_category + quantity > max_total:
                 return False, f"❌ Нельзя взять больше **{max_total}** предметов в категории {category}!"
 
-        # Добавляем в корзину
         session["items"].append({
             "category": category,
             "item": item_name,

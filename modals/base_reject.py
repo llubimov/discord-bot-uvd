@@ -1,7 +1,3 @@
-"""
-Базовый класс для модалок отклонения заявок.
-"""
-
 import discord
 from discord.ui import Modal, TextInput
 import logging
@@ -17,7 +13,6 @@ logger = logging.getLogger(__name__)
 
 
 class BaseRejectModal(Modal):
-    """Базовый класс для модалок отклонения."""
 
     def __init__(self, user_id: int, message_id: int, **kwargs):
         super().__init__(title=self.get_modal_title())
@@ -40,6 +35,10 @@ class BaseRejectModal(Modal):
 
     async def get_staff_role_id(self, interaction: discord.Interaction) -> int:
         raise NotImplementedError
+
+    async def get_allowed_role_ids(self, interaction: discord.Interaction) -> list[int]:
+        rid = await self.get_staff_role_id(interaction)
+        return [int(rid)] if rid else []
 
     async def get_request_data(self, message_id: int):
         raise NotImplementedError
@@ -115,9 +114,19 @@ class BaseRejectModal(Modal):
         try:
             async with action_lock(self.message_id, f"отклонение {self.get_item_name()}"):
                 # 1) Проверка прав
-                staff_role_id = await self.get_staff_role_id(interaction)
-                staff_role = interaction.guild.get_role(staff_role_id) if interaction.guild else None
-                if not staff_role or staff_role not in interaction.user.roles:
+                allowed_role_ids = await self.get_allowed_role_ids(interaction)
+                guild = interaction.guild
+                member_roles = set(guild.get_member(interaction.user.id).roles) if guild else set()
+
+                has_permission = False
+                if guild and allowed_role_ids:
+                    for rid in allowed_role_ids:
+                        role = guild.get_role(int(rid))
+                        if role and role in member_roles:
+                            has_permission = True
+                            break
+
+                if not has_permission:
                     await interaction.response.send_message(ErrorMessages.NO_PERMISSION, ephemeral=True)
                     return
 

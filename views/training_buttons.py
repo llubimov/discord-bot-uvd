@@ -8,7 +8,6 @@ logger = logging.getLogger(__name__)
 
 
 class ExamButton(Button):
-    """Кнопка для принудительного перемещения в голосовой канал экзамена"""
 
     def __init__(self):
         super().__init__(
@@ -19,9 +18,7 @@ class ExamButton(Button):
         )
 
     async def callback(self, interaction: discord.Interaction):
-        """Логика при нажатии - принудительное перемещение"""
 
-        # Получаем сервер
         guild = interaction.client.get_guild(Config.GUILD_ID)
         if not guild:
             await interaction.response.send_message(
@@ -100,7 +97,6 @@ class ExamButton(Button):
 
 
 class ExamView(View):
-    """View с кнопкой для принудительного перемещения"""
 
     def __init__(self, timeout_seconds: int = 3600):
         super().__init__(timeout=None)

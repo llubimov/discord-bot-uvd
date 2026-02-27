@@ -5,6 +5,7 @@ from datetime import datetime
 import asyncio
 
 from config import Config
+from views.warehouse_theme import BLUE, GREEN
 from services import warehouse_cooldown
 from services.warehouse_session import WarehouseSession
 from services.warehouse_audit import WarehouseAudit
@@ -18,16 +19,34 @@ logger = logging.getLogger(__name__)
 WAREHOUSE_FIELD_NAMES = {"🔫 оружие", "🛡️ бронежилеты", "💊 медикаменты", "📦 расходуемое"}
 
 
-class WarehouseRequestView(View):
-    """Кнопки для управления запросом"""
+def build_edit_cart_embed(session_key, is_staff: bool) -> discord.Embed:
+    """Собирает embed корзины для режима редактирования заявки (тот же вид, что в start_edit_flow)."""
+    items = WarehouseSession.get_items(session_key)
+    if is_staff:
+        edit_desc = "Поправь состав и нажми **ОТПРАВИТЬ** — заявка будет обновлена и сразу выдана."
+    else:
+        edit_desc = "После нажатия **ОТПРАВИТЬ** будет создана новая заявка, а старая заменится автоматически."
+    cart_embed = discord.Embed(
+        title="🛒 Редактирование заявки",
+        color=BLUE,
+        description=f"**Состав:**\n{edit_desc}",
+    )
+    for item in items:
+        cart_embed.add_field(
+            name=item["item"],
+            value=f"Количество: **{item['quantity']}** шт",
+            inline=False,
+        )
+    return cart_embed
 
+
+class WarehouseRequestView(View):
     def __init__(self, author_id: int, message_id: int):
         super().__init__(timeout=None)
         self.author_id = author_id
         self.message_id = message_id
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        """Проверка прав"""
         if not interaction.guild:
             await interaction.response.send_message("❌ Команда доступна только на сервере.", ephemeral=True)
             return False
@@ -45,13 +64,7 @@ class WarehouseRequestView(View):
         return True
 
     def _parse_items_from_embed(self, embed: discord.Embed, include_category: bool = False) -> list[dict]:
-        """
-        Парсит предметы из embed заявки склада.
-        Ожидаемый формат строки:
-        • **Название** — **N** шт
-        """
         items: list[dict] = []
-
         for field in (embed.fields or []):
             field_name = (field.name or "").strip()
             if field_name not in WAREHOUSE_FIELD_NAMES:
@@ -107,7 +120,6 @@ class WarehouseRequestView(View):
         row=0
     )
     async def accept_button(self, interaction: discord.Interaction, button: Button):
-        """Выдать снаряжение"""
         if not interaction.guild:
             await interaction.response.send_message("❌ Команда доступна только на сервере.", ephemeral=True)
             return
@@ -130,7 +142,6 @@ class WarehouseRequestView(View):
         row=0
     )
     async def reject_button(self, interaction: discord.Interaction, button: Button):
-        """Отказать в выдаче"""
         if not interaction.guild:
             await interaction.response.send_message("❌ Команда доступна только на сервере.", ephemeral=True)
             return
@@ -155,11 +166,9 @@ class WarehouseRequestView(View):
         row=0
     )
     async def edit_button(self, interaction: discord.Interaction, button: Button):
-        """Редактировать запрос"""
-        await self.handle_edit(interaction)
+        await start_edit_flow(interaction, self.message_id, self.author_id)
 
     async def handle_accept(self, interaction: discord.Interaction):
-        """Обработка выдачи"""
         can, cooldown_message = warehouse_cooldown.can_issue(self.author_id)
         if not can:
             await interaction.response.send_message(
@@ -172,7 +181,6 @@ class WarehouseRequestView(View):
 
         try:
             async with action_lock(self.message_id, "выдача склада"):
-                # Получаем сообщение заявки
                 try:
                     message = await self._fetch_request_message(interaction)
                     if not message:
@@ -192,14 +200,22 @@ class WarehouseRequestView(View):
 
                 embed = message.embeds[0]
 
-                # Защита от повторной обработки
                 for field in embed.fields:
                     fname = (field.name or "").lower()
                     if "выдано" in fname or "отказ" in fname:
                         await interaction.followup.send("⚠️ Эта заявка уже обработана.", ephemeral=True)
                         return
 
-                # Извлекаем предметы из embed
+                # Обновляем статус
+                updated_status = False
+                for i, field in enumerate(embed.fields):
+                    if (field.name or "").strip() == "Статус":
+                        embed.set_field_at(i, name="Статус", value="🟢 Выдано", inline=False)
+                        updated_status = True
+                        break
+                if not updated_status:
+                    embed.add_field(name="Статус", value="🟢 Выдано", inline=False)
+
                 items = self._parse_items_from_embed(embed, include_category=False)
                 if not items:
                     await interaction.followup.send(
@@ -223,10 +239,9 @@ class WarehouseRequestView(View):
                 except Exception as e:
                     logger.warning("Склад: ошибка аудита выдачи (msg_id=%s): %s", self.message_id, e, exc_info=True)
 
-                # Обновляем embed
-                embed.color = discord.Color.green()
+                embed.color = GREEN
                 embed.add_field(
-                    name="✅ ВЫДАНО",
+                    name="✅ Выдано",
                     value=(
                         f"Сотрудник: {interaction.user.mention}\n"
                         f"Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
@@ -234,10 +249,8 @@ class WarehouseRequestView(View):
                     inline=False
                 )
 
-                # Кулдаун регистрируем только перед успешным завершением
                 warehouse_cooldown.register_issue(self.author_id)
 
-                # Удаляем из БД и памяти
                 try:
                     from database import delete_warehouse_request
                     await asyncio.to_thread(delete_warehouse_request, self.message_id)
@@ -247,7 +260,6 @@ class WarehouseRequestView(View):
                 if hasattr(state, "warehouse_requests"):
                     state.warehouse_requests.pop(self.message_id, None)
 
-                # Убираем кнопки
                 try:
                     await message.edit(embed=embed, view=None)
                 except discord.NotFound:
@@ -279,112 +291,157 @@ class WarehouseRequestView(View):
             logger.error("Ошибка при выдаче склада: %s", e, exc_info=True)
             await interaction.followup.send("❌ Ошибка", ephemeral=True)
 
-    async def handle_edit(self, interaction: discord.Interaction):
-        """Редактирование запроса - открывает отдельную корзину редактирования"""
-        try:
-            async with action_lock(self.message_id, "редактирование запроса склада"):
-                # Получаем сообщение заявки
-                try:
-                    message = await self._fetch_request_message(interaction)
-                    if not message:
-                        if interaction.response.is_done():
-                            await interaction.followup.send("❌ Сообщение заявки не найдено.", ephemeral=True)
-                        else:
-                            await interaction.response.send_message("❌ Сообщение заявки не найдено.", ephemeral=True)
-                        return
-                except discord.Forbidden:
+
+async def start_edit_flow(
+    interaction: discord.Interaction,
+    message_id: int,
+    author_id: int,
+    channel_where_message: discord.TextChannel | None = None,
+) -> None:
+    """
+    Общая логика «открыть редактирование заявки». Вызывается с кнопки на сообщении заявки
+    или из слэш-команды списка заявок. channel_where_message — канал, где лежит сообщение заявки
+    (если None, берётся interaction.channel).
+    """
+    channel = channel_where_message or interaction.channel
+    if not channel or not isinstance(channel, discord.TextChannel):
+        if interaction.response.is_done():
+            await interaction.followup.send("❌ Канал заявки недоступен.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Канал заявки недоступен.", ephemeral=True)
+        return
+
+    try:
+        async with action_lock(message_id, "редактирование запроса склада"):
+            try:
+                message = await channel.fetch_message(message_id)
+            except discord.NotFound:
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ Сообщение заявки не найдено.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ Сообщение заявки не найдено.", ephemeral=True)
+                return
+            except discord.Forbidden:
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ Нет доступа к сообщению заявки.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ Нет доступа к сообщению заявки.", ephemeral=True)
+                return
+            except discord.HTTPException as e:
+                logger.warning("Склад edit: HTTP ошибка fetch_message %s: %s", message_id, e)
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ Ошибка Discord API.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ Ошибка Discord API.", ephemeral=True)
+                return
+
+            if not message.embeds:
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ У заявки нет embed.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ У заявки нет embed.", ephemeral=True)
+                return
+
+            embed = message.embeds[0]
+            for field in embed.fields:
+                if (field.name or "").strip() == "Статус" and (field.value or "").strip() == "✏️ Редактируется":
                     if interaction.response.is_done():
-                        await interaction.followup.send("❌ У бота нет доступа к сообщению заявки.", ephemeral=True)
+                        await interaction.followup.send("⚠️ Заявка уже редактируется.", ephemeral=True)
                     else:
-                        await interaction.response.send_message("❌ У бота нет доступа к сообщению заявки.", ephemeral=True)
+                        await interaction.response.send_message("⚠️ Заявка уже редактируется.", ephemeral=True)
                     return
-                except discord.HTTPException as e:
-                    logger.warning("Склад edit: HTTP ошибка fetch_message %s: %s", self.message_id, e)
+            for field in embed.fields:
+                fname = (field.name or "").lower()
+                if "выдано" in fname or "отказ" in fname:
                     if interaction.response.is_done():
-                        await interaction.followup.send("❌ Ошибка Discord API при получении сообщения.", ephemeral=True)
+                        await interaction.followup.send(
+                            "⚠️ Эта заявка уже обработана и не может быть отредактирована.",
+                            ephemeral=True,
+                        )
                     else:
-                        await interaction.response.send_message("❌ Ошибка Discord API при получении сообщения.", ephemeral=True)
+                        await interaction.response.send_message(
+                            "⚠️ Эта заявка уже обработана и не может быть отредактирована.",
+                            ephemeral=True,
+                        )
                     return
 
-                if not message.embeds:
-                    if interaction.response.is_done():
-                        await interaction.followup.send("❌ У заявки отсутствует embed.", ephemeral=True)
-                    else:
-                        await interaction.response.send_message("❌ У заявки отсутствует embed.", ephemeral=True)
-                    return
+            view_instance = WarehouseRequestView(author_id, message_id)
+            items = view_instance._parse_items_from_embed(embed, include_category=True)
+            if not items:
+                if interaction.response.is_done():
+                    await interaction.followup.send("❌ Не удалось загрузить предметы для редактирования.", ephemeral=True)
+                else:
+                    await interaction.response.send_message("❌ Не удалось загрузить предметы для редактирования.", ephemeral=True)
+                return
 
-                embed = message.embeds[0]
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=True)
 
-                # Защита от повторной обработки (уже выдано/отказано)
-                for field in embed.fields:
-                    fname = (field.name or "").lower()
-                    if "выдано" in fname or "отказ" in fname:
-                        if interaction.response.is_done():
-                            await interaction.followup.send("⚠️ Эта заявка уже обработана и не может быть отредактирована.", ephemeral=True)
-                        else:
-                            await interaction.response.send_message("⚠️ Эта заявка уже обработана и не может быть отредактирована.", ephemeral=True)
-                        return
+            # Меняем статус в сообщении заявки на «Редактируется»
+            status_updated = False
+            for i, field in enumerate(embed.fields):
+                if (field.name or "").strip() == "Статус":
+                    embed.set_field_at(i, name="Статус", value="✏️ Редактируется", inline=False)
+                    status_updated = True
+                    break
+            if not status_updated:
+                embed.add_field(name="Статус", value="✏️ Редактируется", inline=False)
+            try:
+                await message.edit(embed=embed)
+            except (discord.NotFound, discord.Forbidden, discord.HTTPException) as e:
+                logger.warning("Склад edit: не удалось обновить статус сообщения %s: %s", message_id, e)
 
-                # Парсим предметы из embed
-                items = self._parse_items_from_embed(embed, include_category=True)
+            edit_session_key = f"warehouse_edit:{interaction.user.id}:{message_id}"
+            WarehouseSession.set_items(edit_session_key, items)
 
-                if not items:
-                    if interaction.response.is_done():
-                        await interaction.followup.send("❌ Не удалось загрузить предметы для редактирования", ephemeral=True)
-                    else:
-                        await interaction.response.send_message("❌ Не удалось загрузить предметы для редактирования", ephemeral=True)
-                    return
+            staff_role = interaction.guild.get_role(Config.WAREHOUSE_STAFF_ROLE_ID) if interaction.guild else None
+            is_staff = bool(staff_role and staff_role in (interaction.user.roles or []))
 
-                # ВАЖНО: используем отдельную временную сессию редактирования, чтобы не затирать обычную корзину пользователя
-                edit_session_key = f"warehouse_edit:{interaction.user.id}:{self.message_id}"
-                WarehouseSession.set_items(edit_session_key, items)
+            if is_staff:
+                edit_desc = "Поправь состав и нажми **ОТПРАВИТЬ** — заявка будет обновлена и сразу выдана."
+            else:
+                edit_desc = "После нажатия **ОТПРАВИТЬ** будет создана новая заявка, а старая заменится автоматически."
 
-                cart_embed = discord.Embed(
-                    title="🛒 РЕДАКТИРОВАНИЕ ЗАПРОСА",
-                    color=discord.Color.blue(),
-                    description=(
-                        "**Текущий состав:**\n"
-                        "После нажатия **ОТПРАВИТЬ** будет создана новая заявка, а старая заменится автоматически."
-                    )
+            cart_embed = discord.Embed(
+                title="🛒 Редактирование заявки",
+                color=BLUE,
+                description=f"**Состав:**\n{edit_desc}",
+            )
+            for item in items:
+                cart_embed.add_field(
+                    name=item["item"],
+                    value=f"Количество: **{item['quantity']}** шт",
+                    inline=False,
                 )
 
-                for item in items:
-                    cart_embed.add_field(
-                        name=item["item"],
-                        value=f"Количество: **{item['quantity']}** шт",
-                        inline=False
-                    )
+            view = WarehouseActionView(
+                session_key=edit_session_key,
+                request_owner_id=author_id,
+                editing_request_message_id=message_id,
+                mode="issue" if is_staff else "request",
+            )
 
-                view = WarehouseActionView(
-                    session_key=edit_session_key,
-                    request_owner_id=self.author_id,
-                    editing_request_message_id=self.message_id,
-                )
+            await interaction.followup.send(embed=cart_embed, view=view, ephemeral=True)
 
-                await interaction.response.send_message(
-                    embed=cart_embed,
-                    view=view,
-                    ephemeral=True
-                )
+            logger.info(
+                "Загружено %s предметов для редактирования | editor=%s | owner=%s | msg_id=%s | session=%s",
+                len(items), interaction.user.id, author_id, message_id, edit_session_key,
+            )
 
-                logger.info(
-                    "Загружено %s предметов для редактирования | editor=%s | owner=%s | msg_id=%s | session=%s",
-                    len(items),
-                    interaction.user.id,
-                    self.author_id,
-                    self.message_id,
-                    edit_session_key,
-                )
-
-        except RuntimeError as e:
-            logger.info("Склад edit lock: %s", e)
+    except RuntimeError as e:
+        if str(e) == "ACTION_ALREADY_IN_PROGRESS":
             if interaction.response.is_done():
                 await interaction.followup.send("⏳ Эта заявка уже редактируется. Попробуйте через пару секунд.", ephemeral=True)
             else:
                 await interaction.response.send_message("⏳ Эта заявка уже редактируется. Попробуйте через пару секунд.", ephemeral=True)
-        except Exception as e:
-            logger.error("Ошибка при редактировании заявки: %s", e, exc_info=True)
+        else:
             if interaction.response.is_done():
-                await interaction.followup.send("❌ Ошибка при редактировании заявки", ephemeral=True)
+                await interaction.followup.send("❌ Ошибка блокировки.", ephemeral=True)
             else:
-                await interaction.response.send_message("❌ Ошибка при редактировании заявки", ephemeral=True)
+                await interaction.response.send_message("❌ Ошибка блокировки.", ephemeral=True)
+    except Exception as e:
+        logger.error("Ошибка при редактировании заявки: %s", e, exc_info=True)
+        if interaction.response.is_done():
+            await interaction.followup.send("❌ Ошибка при редактировании заявки.", ephemeral=True)
+        else:
+            await interaction.response.send_message("❌ Ошибка при редактировании заявки.", ephemeral=True)

@@ -5,6 +5,7 @@ import asyncio
 import re
 
 from config import Config
+from views.theme import RED
 from views.message_texts import ErrorMessages
 from state import active_firing_requests
 from utils.rate_limiter import apply_role_changes, safe_discord_call
@@ -35,7 +36,17 @@ class FiringView(View):
             await interaction.response.send_message("❌ Команда доступна только на сервере.", ephemeral=True)
             return False
 
-        staff_role = interaction.guild.get_role(Config.FIRING_STAFF_ROLE_ID)
+        # Роль кадровика (увольнение) через кэш, если он инициализирован
+        staff_role = None
+        try:
+            import state as _state_for_roles  # локальный импорт, чтобы избежать циклов
+            cache = getattr(_state_for_roles, "role_cache", None)
+        except Exception:
+            cache = None
+        if cache is not None:
+            staff_role = await cache.get_role(interaction.guild.id, Config.FIRING_STAFF_ROLE_ID)
+        else:
+            staff_role = interaction.guild.get_role(Config.FIRING_STAFF_ROLE_ID)
         if not staff_role or staff_role not in interaction.user.roles:
             await interaction.response.send_message(ErrorMessages.NO_PERMISSION, ephemeral=True)
             return False
@@ -139,31 +150,47 @@ class FiringView(View):
                 full_name = request_data.get("full_name", "Сотрудник")
 
                 if not member:
-                    # Сотрудник уже покинул сервер
+                    # Сотрудник уже покинул сервер: фиксируем рапорт, без дополнительного сообщения в канал
                     new_embed = copy_embed(interaction.message.embeds[0])
                     new_embed = add_officer_field(new_embed, interaction.user.mention)
-                    new_embed.color = discord.Color.red()
+                    new_embed.color = RED
                     _set_firing_status_in_embed(new_embed, StatusValues.FIRED)
                     try:
                         await interaction.message.edit(embed=new_embed, view=None)
                     except Exception as e:
                         logger.warning("Не удалось обновить рапорт (member left): %s", e)
+
+                    # Попытка отправить в кадровый аудит, даже если участник уже не в гильдии
+                    class _StubMember:
+                        def __init__(self, uid: int):
+                            self.id = uid
+
+                    try:
+                        await send_to_audit(
+                            interaction,
+                            _StubMember(int(request_data.get("discord_id", 0))),
+                            Config.ACTION_FIRED,
+                            Config.RANK_FIRED,
+                            request_data.get("message_link") or interaction.message.jump_url,
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            "Ошибка аудита увольнения (member left, user_id=%s): %s",
+                            request_data.get("discord_id", 0),
+                            e,
+                            exc_info=True,
+                        )
+
                     active_firing_requests.pop(interaction.message.id, None)
                     try:
                         await asyncio.to_thread(delete_request, "firing_requests", interaction.message.id)
                     except Exception as e:
                         logger.warning("Не удалось удалить firing_request из БД: %s", e)
+
                     await interaction.followup.send(
                         f"✅ Рапорт зафиксирован. Сотрудник **{full_name}** уже покинул сервер.",
                         ephemeral=True,
                     )
-                    try:
-                        await interaction.message.channel.send(
-                            f"Сотрудник **{full_name}** (покинул сервер) — рапорт на увольнение зафиксирован.",
-                            allowed_mentions=discord.AllowedMentions.none(),
-                        )
-                    except Exception:
-                        pass
                     return
 
                 # Снимаем роли
@@ -186,8 +213,17 @@ class FiringView(View):
                         await interaction.followup.send("❌ Ошибка Discord API при снятии ролей.", ephemeral=True)
                         return
 
-                # Выдаём роль уволенного
-                fired_role = interaction.guild.get_role(Config.FIRED_ROLE_ID)
+                # Выдаём роль уволенного (через кэш, если есть)
+                fired_role = None
+                try:
+                    import state as _state_for_roles  # локальный импорт, чтобы избежать циклов
+                    cache = getattr(_state_for_roles, "role_cache", None)
+                except Exception:
+                    cache = None
+                if cache is not None:
+                    fired_role = await cache.get_role(interaction.guild.id, Config.FIRED_ROLE_ID)
+                else:
+                    fired_role = interaction.guild.get_role(Config.FIRED_ROLE_ID)
                 if fired_role:
                     try:
                         await apply_role_changes(member, add=[fired_role])
@@ -242,9 +278,9 @@ class FiringView(View):
                 dm_warning = None
                 try:
                     embed = discord.Embed(
-                        title="✅ Рапорт об увольнении удовлетворён",
-                        color=discord.Color.red(),
-                        description=f"**{interaction.guild.name}**\n\nВаш рапорт об увольнении был одобрен.",
+                        title="Рапорт об увольнении удовлетворён",
+                        color=RED,
+                        description=f"**{interaction.guild.name}**\n\nРапорт об увольнении одобрен.",
                         timestamp=interaction.created_at
                     )
                     embed.add_field(name="Ваш новый ник", value=f"`{new_nick}`", inline=False)
@@ -262,7 +298,7 @@ class FiringView(View):
                 old_embed = message.embeds[0]
                 new_embed = copy_embed(old_embed)
                 new_embed = add_officer_field(new_embed, interaction.user.mention)
-                new_embed.color = discord.Color.red()
+                new_embed.color = RED
                 _set_firing_status_in_embed(new_embed, StatusValues.FIRED)
 
                 try:

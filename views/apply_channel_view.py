@@ -6,6 +6,7 @@ import discord
 from discord.ui import View, Button
 
 from modals.department_apply import open_apply_modal
+from services.department_roles import get_dept_role_id
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,16 @@ class ApplyChannelView(View):
     def _make_callback(self, source_dept: str):
         async def callback(interaction: discord.Interaction):
             try:
+                if isinstance(interaction.user, discord.Member):
+                    guild = interaction.guild
+                    dept_role_id = get_dept_role_id(source_dept)
+                    role = guild.get_role(dept_role_id) if guild and dept_role_id else None
+                    if role and role not in interaction.user.roles:
+                        await interaction.response.send_message(
+                            "❌ Вы не относитесь к этому отделу и не можете подавать заявку от его имени.",
+                            ephemeral=True,
+                        )
+                        return
                 modal = open_apply_modal(interaction, self.target_dept, source_dept)
                 if modal:
                     await interaction.response.send_modal(modal)

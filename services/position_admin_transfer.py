@@ -59,6 +59,11 @@ class AdminTransferPositionManager(BasePositionManager):
     def channel_id(self) -> int:
         return Config.CHANNEL_ADMIN_TRANSFER
 
+    @property
+    def check_interval(self) -> int:
+        # Сообщение админ‑переводов почти статично
+        return 120
+
     async def get_embed(self) -> discord.Embed:
         embed = discord.Embed(title=TITLE, description=DESCRIPTION, color=discord.Color.blue())
         return embed

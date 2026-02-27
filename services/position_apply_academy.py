@@ -15,6 +15,11 @@ class AcademyApplyPositionManager(BasePositionManager):
     def channel_id(self) -> int:
         return Config.ACADEMY_CHANNEL_ID
 
+    @property
+    def check_interval(self) -> int:
+        # Шапка академии важна, но не критично часто — раз в 2 минуты
+        return 120
+
     async def get_embed(self) -> discord.Embed:
         embed = discord.Embed(title=TITLE, description=DESCRIPTION, color=discord.Color.gold())
         return embed

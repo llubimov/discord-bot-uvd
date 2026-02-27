@@ -18,11 +18,6 @@ def _get_lock(message_id: int) -> asyncio.Lock:
 
 
 def _cleanup_lock(message_id: int, lock: asyncio.Lock) -> None:
-    """
-    Удаляем лок из словаря, если:
-    - в словаре всё ещё лежит именно этот объект лока
-    - лок не занят
-    """
     msg_id = int(message_id)
     current = _locks.get(msg_id)
 
@@ -39,16 +34,11 @@ def is_locked(message_id: int) -> bool:
 
 
 def locks_count() -> int:
-    """Для диагностики: сколько локов сейчас хранится в кеше."""
     return len(_locks)
 
 
 @asynccontextmanager
 async def action_lock(message_id: int, action_name: str = "action"):
-    """
-    Лок на конкретное сообщение (заявку/рапорт).
-    Защищает от двойных нажатий и гонок.
-    """
     msg_id = int(message_id)
     lock = _get_lock(msg_id)
 

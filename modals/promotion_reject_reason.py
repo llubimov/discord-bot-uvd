@@ -1,9 +1,3 @@
-"""
-=====================================================
-МОДАЛКА ОТКЛОНЕНИЯ РАПОРТОВ О ПОВЫШЕНИИ
-=====================================================
-"""
-
 import logging
 from config import Config
 from state import active_promotion_requests
@@ -13,15 +7,19 @@ logger = logging.getLogger(__name__)
 
 
 class PromotionRejectReasonModal(BaseRejectModal):
-    """Модалка отклонения рапортов о повышении"""
 
     @classmethod
     def get_modal_title(cls):
         return "отклонение рапорта на повышение"
 
     async def get_staff_role_id(self, interaction):
-        required_role_id = Config.PROMOTION_CHANNELS.get(interaction.channel.id)
-        return required_role_id or 0
+        # Для обратной совместимости: возвращаем первую роль из списка как «основную».
+        role_ids = list(Config.PROMOTION_CHANNELS.get(interaction.channel.id, []) or [])
+        return int(role_ids[0]) if role_ids else 0
+
+    async def get_allowed_role_ids(self, interaction):
+        role_ids = list(Config.PROMOTION_CHANNELS.get(interaction.channel.id, []) or [])
+        return [int(rid) for rid in role_ids if int(rid) != 0]
 
     async def get_request_data(self, message_id):
         return active_promotion_requests.get(message_id)
@@ -43,7 +41,6 @@ class PromotionRejectReasonModal(BaseRejectModal):
         return "рапорт"
 
     async def get_view_instance(self, interaction, request_data):
-        """Специальная логика для promotion view"""
         from views.promotion_view import PromotionView
         view = PromotionView(
             user_id=self.user_id,
@@ -56,10 +53,6 @@ class PromotionRejectReasonModal(BaseRejectModal):
         return view
 
     async def on_submit(self, interaction):
-        """
-        Fallback для старых рапортов:
-        если записи нет в state, собираем минимальные данные из уже известных параметров view.
-        """
         if self.message_id not in active_promotion_requests:
             try:
                 msg = await interaction.channel.fetch_message(self.message_id)

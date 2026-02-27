@@ -18,6 +18,10 @@ class ApplyOsbPositionManager(BasePositionManager):
     def channel_id(self) -> int:
         return Config.CHANNEL_APPLY_OSB
 
+    @property
+    def check_interval(self) -> int:
+        return 180
+
     async def get_embed(self) -> discord.Embed:
         embed = discord.Embed(title=TITLE, description=DESCRIPTION, color=discord.Color.red())
         return embed

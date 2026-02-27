@@ -1,10 +1,3 @@
-"""
-=====================================================
-КУЛДАУН ВЫДАЧ СО СКЛАДА
-Нельзя выдавать одному человеку чаще раза в 6 часов
-=====================================================
-"""
-
 from datetime import datetime, timedelta
 import logging
 from typing import Dict, Optional
@@ -13,21 +6,13 @@ from config import Config
 logger = logging.getLogger(__name__)
 
 class WarehouseCooldown:
-    """
-    Следит за временем последней выдачи каждому пользователю
-    Хранит данные в памяти (при перезапуске сбрасывается)
-    """
-    
+
     def __init__(self):
         # {user_id: datetime последней выдачи}
         self.last_issue: Dict[int, datetime] = {}
         self.cooldown_hours = Config.WAREHOUSE_COOLDOWN_HOURS
     
     def can_issue(self, user_id: int) -> tuple[bool, Optional[str]]:
-        """
-        Проверяет можно ли выдать пользователю
-        Возвращает (можно ли, сообщение об ошибке)
-        """
         if user_id not in self.last_issue:
             return True, None
         
@@ -48,12 +33,10 @@ class WarehouseCooldown:
             return False, f"⏰ Следующая выдача возможна через **{minutes} мин**"
     
     def register_issue(self, user_id: int):
-        """Записывает время выдачи"""
         self.last_issue[user_id] = datetime.now()
         logger.info(f"✅ Кулдаун установлен для {user_id} до {self.last_issue[user_id] + timedelta(hours=self.cooldown_hours)}")
     
     def get_remaining_time(self, user_id: int) -> Optional[str]:
-        """Возвращает оставшееся время ожидания"""
         if user_id not in self.last_issue:
             return None
         
@@ -71,7 +54,6 @@ class WarehouseCooldown:
             return f"{minutes} мин"
     
     def clear_user(self, user_id: int):
-        """Сбрасывает кулдаун для пользователя (на случай ошибок)"""
         if user_id in self.last_issue:
             del self.last_issue[user_id]
             logger.info(f"🔄 Кулдаун сброшен для {user_id}")

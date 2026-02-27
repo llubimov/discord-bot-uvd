@@ -16,6 +16,7 @@ from utils.validators import Validators
 from utils.rate_limiter import safe_send
 from utils.rank_decline import decline_rank_genitive
 from constants import FieldNames, StatusValues
+from views.theme import RED
 from utils.member_display import get_member_full_name
 
 logger = logging.getLogger(__name__)
@@ -45,14 +46,14 @@ def _build_firing_embed(
         "**РАПОРТ ОБ УВОЛЬНЕНИИ**\n"
         "Начальнику УВД по ЦАО ГУ МВД по г. Москва и Московской области\n"
         "Генерал-полковник полиции Визнер С.В.\n\n"
-        f"от {rank_genitive} <@!{discord_id}>\n\n"
+        f"ОТ {rank_genitive} — id {discord_id}\n\n"
         f"Я, **{full_name}**, прошу уволить меня из рядов Управления Внутренних Дел Российской Федерации {recovery_text}.\n\n"
         "🌟 Фото удостоверения:\n"
         f"{photo_link or '—'}\n\n"
         f"{date_str}"
     )
 
-    embed = discord.Embed(title=title, description=body, color=discord.Color.red())
+    embed = discord.Embed(title=title, description=body, color=RED)
     embed.add_field(name=FieldNames.OFFICER, value=f"<@!{discord_id}>", inline=True)
     embed.add_field(name=FieldNames.STATUS, value="⏳ Ожидает рассмотрения", inline=True)
     if is_auto_report:
@@ -177,7 +178,18 @@ class FiringApplyModal(Modal):
 
         role_mention = f"<@&{Config.FIRING_STAFF_ROLE_ID}>" if getattr(Config, "FIRING_STAFF_ROLE_ID", 0) else ""
         view = FiringView(user_id=discord_id)
-        channel = bot.get_channel(Config.FIRING_CHANNEL_ID)
+
+        # Канал увольнений через кэш, если он инициализирован
+        channel = None
+        try:
+            import state as _state_for_channel  # локальный импорт, чтобы избежать циклов
+            cache = getattr(_state_for_channel, "channel_cache", None)
+            if cache is not None:
+                channel = cache.get_channel(Config.FIRING_CHANNEL_ID)
+        except Exception:
+            channel = None
+        if channel is None:
+            channel = bot.get_channel(Config.FIRING_CHANNEL_ID)
         if not channel:
             await interaction.response.send_message("❌ Канал рапортов не найден.", ephemeral=True)
             return
@@ -210,7 +222,17 @@ class FiringApplyModal(Modal):
 async def post_auto_firing_report(member: discord.Member) -> bool:
     if not member or not member.guild:
         return False
-    channel = bot.get_channel(Config.FIRING_CHANNEL_ID)
+    # Канал увольнений через кэш, если он инициализирован
+    channel = None
+    try:
+        import state as _state_for_channel  # локальный импорт, чтобы избежать циклов
+        cache = getattr(_state_for_channel, "channel_cache", None)
+        if cache is not None:
+            channel = cache.get_channel(Config.FIRING_CHANNEL_ID)
+    except Exception:
+        channel = None
+    if channel is None:
+        channel = bot.get_channel(Config.FIRING_CHANNEL_ID)
     if not channel:
         logger.warning("FIRING_CHANNEL_ID не задан или канал не найден для авто-рапорта при выходе")
         return False

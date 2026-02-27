@@ -1,6 +1,3 @@
-"""
-Модал отклонения заявки на перевод (из Академии в ГРОМ/ОРЛС/ОСБ).
-"""
 from __future__ import annotations
 
 import asyncio
@@ -10,6 +7,7 @@ import discord
 from discord.ui import Modal, TextInput
 
 from config import Config
+from views.theme import RED
 from database import delete_department_transfer_request
 from state import active_department_transfers
 from utils.embed_utils import copy_embed, update_embed_status
@@ -52,7 +50,7 @@ class DepartmentRejectModal(Modal, title="Отклонение заявки"):
 
             reason_text = (self.reason.value or "").strip() or "Не указана"
             embed = copy_embed(msg.embeds[0])
-            embed = update_embed_status(embed, "❌ Отклонено", discord.Color.red())
+            embed = update_embed_status(embed, "❌ Отклонено", RED)
             embed.add_field(name="Причина отказа", value=reason_text[:1024], inline=False)
             embed.add_field(name="Отклонил", value=interaction.user.mention, inline=False)
 

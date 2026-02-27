@@ -35,18 +35,21 @@ class ViewRestorer:
         self.bot = bot
 
     async def restore_all(self):
-        logger.info("🔄 Начинаем восстановление View...")
+        logger.info("Восстановление View...")
 
         self._restore_start_views()
         await self._load_requests_from_db()
 
-        await self._restore_request_views()
-        await self._restore_firing_views()
-        await self._restore_promotion_views()
-        await self._restore_warehouse_views()
-        await self._restore_department_transfer_views()
+        # Восстановление кнопок по типам заявок — независимые каналы/состояния, можно параллельно
+        await asyncio.gather(
+            self._restore_request_views(),
+            self._restore_firing_views(),
+            self._restore_promotion_views(),
+            self._restore_warehouse_views(),
+            self._restore_department_transfer_views(),
+        )
 
-        logger.info("✅ Восстановление View завершено")
+        logger.info("Восстановление View завершено")
 
     def _restore_start_views(self):
         self.bot.add_view(StartView())
@@ -58,16 +61,25 @@ class ViewRestorer:
         self.bot.add_view(ApplyChannelView("orls", [("pps", "「ППС」"), ("grom", "「ГРОМ」"), ("osb", "「ОСБ」")]))
         self.bot.add_view(AcademyApplyView())
         self.bot.add_view(AdminTransferView())
+        # Канал увольнений: кнопки «Подать заявление» и «Уволить» (старший состав)
         self.bot.add_view(FiringStartView())
-        logger.info("🔄 Стартовые View восстановлены")
+        logger.info("Стартовые View восстановлены")
 
     async def _load_requests_from_db(self):
-        # Важно: SQLite синхронный — выносим в отдельный поток
-        state.active_requests = await asyncio.to_thread(load_all_requests)
-        state.active_firing_requests = await asyncio.to_thread(load_all_firing_requests)
-        state.active_promotion_requests = await asyncio.to_thread(load_all_promotion_requests)
-        state.warehouse_requests = await asyncio.to_thread(load_all_warehouse_requests)
-        state.active_department_transfers = await asyncio.to_thread(load_all_department_transfer_requests)
+        # SQLite синхронный — загружаем все таблицы параллельно в потоках
+        (
+            state.active_requests,
+            state.active_firing_requests,
+            state.active_promotion_requests,
+            state.warehouse_requests,
+            state.active_department_transfers,
+        ) = await asyncio.gather(
+            asyncio.to_thread(load_all_requests),
+            asyncio.to_thread(load_all_firing_requests),
+            asyncio.to_thread(load_all_promotion_requests),
+            asyncio.to_thread(load_all_warehouse_requests),
+            asyncio.to_thread(load_all_department_transfer_requests),
+        )
 
         logger.info(
             "📦 Загружено из БД: заявок=%s, увольнений=%s, повышений=%s, склад=%s, переводы=%s",

@@ -4,6 +4,7 @@ from typing import Iterable
 import discord
 
 from config import Config
+import state
 
 logger = logging.getLogger(__name__)
 
@@ -25,7 +26,13 @@ def _check_channel(guild: discord.Guild, channel_id: int, name: str) -> bool:
         logger.error(_err(f"{name}: ID не задан в config/.env"))
         return False
 
-    ch = guild.get_channel(channel_id)
+    # Канал через кэш, если он инициализирован
+    ch = None
+    cache = getattr(state, "channel_cache", None)
+    if cache is not None:
+        ch = cache.get_channel(channel_id)
+    if ch is None:
+        ch = guild.get_channel(channel_id)
     if ch is None:
         logger.error(_err(f"{name}: канал не найден (ID={channel_id})"))
         return False
@@ -84,10 +91,12 @@ def _check_promotion_channels(guild: discord.Guild):
     if not mapping:
         logger.warning(_warn("PROMOTION_CHANNELS: список пуст"))
         return
-
-    for channel_id, staff_role_id in mapping.items():
+    for channel_id, role_ids in mapping.items():
         _check_channel(guild, int(channel_id), f"Канал повышений {channel_id}")
-        _check_role(guild, int(staff_role_id), f"Роль кадровика для канала повышений {channel_id}")
+
+        # PROMOTION_CHANNELS хранит список ролей; проверяем каждую
+        for rid in (role_ids or []):
+            _check_role(guild, int(rid), f"Роль кадровика для канала повышений {channel_id}")
 
 
 def _check_rank_roles(guild: discord.Guild, bot_role: discord.Role | None):
@@ -167,6 +176,7 @@ async def run_startup_checks(bot: discord.Client):
     _check_role(guild, getattr(Config, "TRANSFER_STAFF_ROLE_ID", 0), "TRANSFER_STAFF_ROLE_ID", bot_role=bot_role)
     _check_role(guild, getattr(Config, "GOV_STAFF_ROLE_ID", 0), "GOV_STAFF_ROLE_ID", bot_role=bot_role)
     _check_role(guild, getattr(Config, "FIRING_STAFF_ROLE_ID", 0), "FIRING_STAFF_ROLE_ID", bot_role=bot_role)
+    _check_role(guild, getattr(Config, "FIRING_SENIOR_ROLE_ID", 0), "FIRING_SENIOR_ROLE_ID", bot_role=bot_role)
     _check_role(guild, getattr(Config, "WAREHOUSE_STAFF_ROLE_ID", 0), "WAREHOUSE_STAFF_ROLE_ID", bot_role=bot_role)
 
     _check_role(guild, getattr(Config, "FIRED_ROLE_ID", 0), "FIRED_ROLE_ID", bot_role=bot_role)

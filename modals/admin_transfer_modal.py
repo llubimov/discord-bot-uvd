@@ -1,6 +1,3 @@
-"""
-Модал административного перевода в ППС (без заявки).
-"""
 from __future__ import annotations
 
 import logging

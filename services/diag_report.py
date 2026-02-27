@@ -32,7 +32,13 @@ def _check_channel(guild: discord.Guild, channel_id: int, title: str):
     if not channel_id:
         return f"❌ {title}: ID не задан"
 
-    ch = guild.get_channel(int(channel_id))
+    # Канал через кэш, если он инициализирован
+    ch = None
+    cache = getattr(state, "channel_cache", None)
+    if cache is not None:
+        ch = cache.get_channel(int(channel_id))
+    if ch is None:
+        ch = guild.get_channel(int(channel_id))
     if not ch:
         return f"❌ {title}: канал не найден ({channel_id})"
 
@@ -228,17 +234,31 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
     promo_map = getattr(Config, "PROMOTION_CHANNELS", {}) or {}
     promo_lines = []
     if promo_map:
-        for ch_id, role_id in promo_map.items():
+        for ch_id, role_ids in promo_map.items():
             ch = guild.get_channel(int(ch_id))
-            role = guild.get_role(int(role_id))
-            ch_ok = bool(ch)
-            role_ok = bool(role)
+            ch_name = ch.name if ch else ch_id
+
+            if not role_ids:
+                promo_lines.append(f"{_warn('нет ролей')} {ch_name} → (ролей не задано)")
+                continue
+
+            names = []
+            all_ok = True
+            for rid in role_ids:
+                role = guild.get_role(int(rid))
+                if not role:
+                    all_ok = False
+                    names.append(str(rid))
+                else:
+                    names.append(role.name)
+
+            arrow = ", ".join(names)
             promo_lines.append(
-                f"{_ok(ch_ok and role_ok)} {ch.name if ch else ch_id} → {role.name if role else role_id}"
+                f"{_ok(ch is not None and all_ok)} {ch_name} → {arrow}"
             )
     else:
         promo_lines.append("⚠️ PROMOTION_CHANNELS пустой")
-    embed.add_field(name="Повышения (канал → роль)", value=_truncate_lines(promo_lines), inline=False)
+    embed.add_field(name="Повышения (канал → роли)", value=_truncate_lines(promo_lines), inline=False)
 
     embed.set_footer(text="/diag | /diag_clean_orphans | /clear_firing")
     return embed

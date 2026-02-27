@@ -1,9 +1,3 @@
-"""
-=====================================================
-МОДАЛКА ОТКЛОНЕНИЯ РАПОРТОВ ОБ УВОЛЬНЕНИИ
-=====================================================
-"""
-
 import logging
 import re
 
@@ -16,7 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 class FiringRejectReasonModal(BaseRejectModal):
-    """Модалка отклонения рапортов об увольнении"""
 
     @classmethod
     def get_modal_title(cls):
@@ -45,10 +38,6 @@ class FiringRejectReasonModal(BaseRejectModal):
         return "рапорт"
 
     async def on_submit(self, interaction):
-        """
-        Fallback для старых рапортов:
-        если записи нет в state, восстанавливаем из embed.
-        """
         if self.message_id not in active_firing_requests:
             try:
                 msg = await interaction.channel.fetch_message(self.message_id)

@@ -15,7 +15,6 @@ logger = logging.getLogger(__name__)
 
 
 class WebhookHandler:
-    """Обработчик вебхуков (рапорты увольнение/повышение)."""
 
     def __init__(self, bot):
         self.bot = bot
@@ -206,7 +205,6 @@ class WebhookHandler:
             logger.error("❌ Ошибка process_promotion (src_msg=%s): %s", message.id, e, exc_info=True)
 
     def _parse_firing_embed(self, embed: discord.Embed):
-        """Парсит embed увольнения"""
         description = (embed.description or "").strip()
         if not description:
             logger.error("Нет описания в embed увольнения")
@@ -226,7 +224,14 @@ class WebhookHandler:
             logger.error("Не найден ID пользователя в рапорте на увольнение")
             return None
 
-        # 2) Имя
+        # 2) Звание (из строки «от ЗВАНИЕ <@id>»)
+        rank = "—"
+        match = self.firing_patterns.get("rank")
+        if match:
+            m_rank = match.search(description)
+            if m_rank:
+                rank = (m_rank.group(1) or "").strip() or "—"
+        # 3) Имя
         full_name = "Сотрудник"
         match = self.firing_patterns["full_name"].search(description)
         if match:
@@ -255,9 +260,10 @@ class WebhookHandler:
             recovery_option = (match.group(1) or "").strip() or recovery_option
 
         logger.info(
-            "📝 Данные увольнения: id=%s, имя='%s', причина='%s', восстановление='%s'",
+            "📝 Данные увольнения: id=%s, имя='%s', звание='%s', причина='%s', восстановление='%s'",
             discord_id,
             full_name,
+            rank,
             reason,
             recovery_option,
         )
@@ -265,6 +271,7 @@ class WebhookHandler:
         return {
             "discord_id": discord_id,
             "full_name": full_name,
+            "rank": rank,
             "reason": reason,
             "recovery_option": recovery_option,
         }

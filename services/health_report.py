@@ -79,12 +79,21 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
 
         firing, promotion, warehouse = await asyncio.to_thread(_load_orphans)
 
-        firing_channel = bot.get_channel(Config.FIRING_CHANNEL_ID)
-        warehouse_channel = bot.get_channel(Config.WAREHOUSE_REQUEST_CHANNEL_ID)
+        # Каналы через кэш, если он инициализирован
+        channel_cache = getattr(state, "channel_cache", None)
+        if channel_cache is not None:
+            firing_channel = channel_cache.get_channel(Config.FIRING_CHANNEL_ID)
+            warehouse_channel = channel_cache.get_channel(Config.WAREHOUSE_REQUEST_CHANNEL_ID)
+        else:
+            firing_channel = bot.get_channel(Config.FIRING_CHANNEL_ID)
+            warehouse_channel = bot.get_channel(Config.WAREHOUSE_REQUEST_CHANNEL_ID)
 
         promo_channels = []
         for cid in (getattr(Config, "PROMOTION_CHANNELS", {}) or {}).keys():
-            ch = bot.get_channel(int(cid))
+            if channel_cache is not None:
+                ch = channel_cache.get_channel(int(cid))
+            else:
+                ch = bot.get_channel(int(cid))
             if ch:
                 promo_channels.append(ch)
 
@@ -135,7 +144,10 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
         for msg_id in list(dept_transfers.keys()):
             found = False
             for ch_id in apply_channel_ids:
-                ch = bot.get_channel(ch_id)
+                if channel_cache is not None:
+                    ch = channel_cache.get_channel(ch_id)
+                else:
+                    ch = bot.get_channel(ch_id)
                 if ch and await _validate_message_exists(ch, int(msg_id)):
                     found = True
                     break

@@ -12,6 +12,7 @@ from database import (
     delete_department_transfer_request,
 )
 from state import active_department_transfers
+import state
 from views.message_texts import ErrorMessages
 from utils.rate_limiter import apply_role_changes, safe_discord_call
 from services.department_roles import (
@@ -32,8 +33,17 @@ def _has_any_role(member: discord.Member, role_ids: list[int]) -> bool:
     if not member or not role_ids:
         return False
     guild = member.guild
+    try:
+        role_cache = getattr(state, "role_cache", None)
+    except Exception:
+        role_cache = None
     for rid in role_ids:
-        r = guild.get_role(rid)
+        r = None
+        if role_cache is not None:
+            # sync helper: используем get_role внутри кэша через guild
+            r = guild.get_role(rid)
+        else:
+            r = guild.get_role(rid)
         if r and r in member.roles:
             return True
     return False
@@ -78,13 +88,14 @@ class DepartmentApprovalView(View):
                         disabled=True,
                     )
                 )
-                b_reject_src_dis = Button(
-                    label=f"Отклонить ({label_src})",
-                    style=discord.ButtonStyle.danger,
-                    custom_id="reject_source",
+                self.add_item(
+                    Button(
+                        label=f"Отклонить ({label_src})",
+                        style=discord.ButtonStyle.danger,
+                        custom_id="reject_source",
+                        disabled=True,
+                    )
                 )
-                b_reject_src_dis.callback = self._handle_reject
-                self.add_item(b_reject_src_dis)
             else:
                 b_accept_src = Button(
                     label=f"Принять ({label_src})",
@@ -201,7 +212,20 @@ class DepartmentApprovalView(View):
                 )
                 try:
                     msg = await interaction.channel.fetch_message(self.message_id)
-                    await msg.edit(view=new_view)
+                    embed = msg.embeds[0] if msg.embeds else None
+                    if embed:
+                        status_text = Config.DEPT_TRANSFER_STATUS_APPROVED_SOURCE
+                        updated = False
+                        for idx, field in enumerate(embed.fields):
+                            if (field.name or "").strip().lower().startswith("статус"):
+                                embed.set_field_at(idx, name=field.name, value=status_text, inline=False)
+                                updated = True
+                                break
+                        if not updated:
+                            embed.add_field(name="Статус", value=status_text, inline=False)
+                        await msg.edit(embed=embed, view=new_view)
+                    else:
+                        await msg.edit(view=new_view)
                 except Exception as e:
                     logger.warning("Не удалось обновить сообщение заявки %s: %s", self.message_id, e)
                 await interaction.followup.send("✅ Одобрение источника зафиксировано.", ephemeral=True)
@@ -312,7 +336,6 @@ class DepartmentApprovalView(View):
                 except (discord.Forbidden, discord.HTTPException):
                     pass
 
-                # Обновить сообщение: обе кнопки серые
                 approver_role_ids = get_chief_deputy_role_ids(self.target_dept)
                 who = interaction.user
                 self.approved_target = next(
@@ -320,20 +343,22 @@ class DepartmentApprovalView(View):
                     approver_role_ids[0] if approver_role_ids else 1,
                 )
                 update_department_transfer_approval(self.message_id, approved_target=self.approved_target)
-                final_view = DepartmentApprovalView(
-                    self.message_id,
-                    self.user_id,
-                    self.target_dept,
-                    self.source_dept,
-                    self.from_academy,
-                    self.form_data,
-                    approved_source=self.approved_source,
-                    approved_target=self.approved_target,
-                    channel_id=self.channel_id,
-                )
                 try:
                     msg = await interaction.channel.fetch_message(self.message_id)
-                    await msg.edit(view=final_view)
+                    embed = msg.embeds[0] if msg.embeds else None
+                    if embed:
+                        status_text = Config.DEPT_TRANSFER_STATUS_APPROVED_FULL
+                        updated = False
+                        for idx, field in enumerate(embed.fields):
+                            if (field.name or "").strip().lower().startswith("статус"):
+                                embed.set_field_at(idx, name=field.name, value=status_text, inline=False)
+                                updated = True
+                                break
+                        if not updated:
+                            embed.add_field(name="Статус", value=status_text, inline=False)
+                        await msg.edit(embed=embed, view=None)
+                    else:
+                        await msg.edit(view=None)
                 except Exception as e:
                     logger.warning("Не удалось обновить сообщение заявки %s: %s", self.message_id, e)
 

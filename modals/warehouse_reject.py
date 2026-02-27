@@ -5,6 +5,7 @@ import asyncio
 from datetime import datetime
 
 from config import Config
+from views.warehouse_theme import RED
 import state
 from services.action_locks import action_lock
 
@@ -58,17 +59,24 @@ class WarehouseRejectModal(Modal, title="Причина отказа"):
 
                 embed = message.embeds[0]
 
-                # Защита от повторной обработки
                 for field in embed.fields:
                     fname = (field.name or "").lower()
                     if "выдано" in fname or "отказ" in fname:
                         await interaction.followup.send("⚠️ Эта заявка уже обработана.", ephemeral=True)
                         return
 
-                # Обновляем embed
-                embed.color = discord.Color.red()
+                updated_status = False
+                for i, field in enumerate(embed.fields):
+                    if (field.name or "").strip() == "Статус":
+                        embed.set_field_at(i, name="Статус", value="🔴 Отказано", inline=False)
+                        updated_status = True
+                        break
+                if not updated_status:
+                    embed.add_field(name="Статус", value="🔴 Отказано", inline=False)
+
+                embed.color = RED
                 embed.add_field(
-                    name="❌ ОТКАЗАНО",
+                    name="❌ Отказано",
                     value=(
                         f"Сотрудник: {interaction.user.mention}\n"
                         f"Время: {datetime.now().strftime('%d.%m.%Y %H:%M')}\n"
@@ -77,7 +85,6 @@ class WarehouseRejectModal(Modal, title="Причина отказа"):
                     inline=False
                 )
 
-                # Убираем кнопки
                 try:
                     await message.edit(embed=embed, view=None)
                 except discord.NotFound:
@@ -91,7 +98,6 @@ class WarehouseRejectModal(Modal, title="Причина отказа"):
                     await interaction.followup.send("❌ Ошибка Discord API при обновлении заявки.", ephemeral=True)
                     return
 
-                # Удаляем запись из БД и памяти
                 try:
                     from database import delete_warehouse_request
                     await asyncio.to_thread(delete_warehouse_request, self.message_id)
@@ -101,14 +107,13 @@ class WarehouseRejectModal(Modal, title="Причина отказа"):
                 if hasattr(state, "warehouse_requests"):
                     state.warehouse_requests.pop(self.message_id, None)
 
-                # Пытаемся уведомить автора в ЛС
                 member = interaction.guild.get_member(self.author_id)
                 dm_warning = None
                 if member:
                     try:
                         dm_embed = discord.Embed(
                             title="❌ В выдаче склада отказано",
-                            color=discord.Color.red(),
+                            color=RED,
                             description=f"Ваш запрос на склад был отклонён на сервере **{interaction.guild.name}**.",
                             timestamp=interaction.created_at
                         )

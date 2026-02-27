@@ -33,7 +33,7 @@ class StartView(View):
             else:
                 await interaction.response.send_message(ErrorMessages.GENERIC, ephemeral=True)
 
-    @discord.ui.button(label="🔵 Перевод", style=discord.ButtonStyle.primary, custom_id="transfer_role")
+    @discord.ui.button(label="🔵 Перевод / Восстановление", style=discord.ButtonStyle.primary, custom_id="transfer_role")
     async def transfer_button(self, interaction: discord.Interaction, button: Button):
         try:
             member = interaction.user if isinstance(interaction.user, discord.Member) else None

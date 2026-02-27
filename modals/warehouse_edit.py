@@ -10,13 +10,6 @@ logger = logging.getLogger(__name__)
 
 
 def _find_item_limit(item_name: str):
-    """
-    Возвращает лимит предмета из WAREHOUSE_ITEMS (int) или None.
-    Поддерживает форматы:
-    - "Предмет": 3
-    - "Предмет": {"max": 2, ...}
-    - "Предмет": {"max_quantity": 2, ...}
-    """
     try:
         for category_data in WAREHOUSE_ITEMS.values():
             if not isinstance(category_data, dict):
@@ -57,22 +50,17 @@ class WarehouseEditModal(Modal):
         current_quantity: int | None = None,
         session_key=None,
         allowed_user_id: int | None = None,
+        request_owner_id: int | None = None,
+        editing_request_message_id: int | None = None,
+        mode: str = "request",
         **kwargs,
     ):
-        """
-        Совместим со старым и новым вызовом.
-
-        Новый безопасный вариант:
-        WarehouseEditModal(
-            allowed_user_id=interaction.user.id,
-            session_key=<ключ сессии>,
-            ...
-        )
-        """
-        # user_id оставляем для обратной совместимости
         self.allowed_user_id = allowed_user_id if allowed_user_id is not None else user_id
         self.session_key = session_key if session_key is not None else user_id
         self.item_index = item_index
+        self.request_owner_id = request_owner_id
+        self.editing_request_message_id = editing_request_message_id
+        self.mode = mode if mode in ("request", "issue") else "request"
 
         # fallback-данные для старого вызова
         self.fallback_category = category
@@ -81,13 +69,11 @@ class WarehouseEditModal(Modal):
 
         self.current_item = None
 
-        # Если ключ сессии уже известен, пробуем взять актуальный предмет из корзины
         if self.session_key is not None and item_index is not None:
             items = WarehouseSession.get_items(self.session_key)
             if 0 <= item_index < len(items):
                 self.current_item = items[item_index]
 
-        # Если не получилось — используем данные из старого вызова
         if self.current_item is None and category and item_name:
             self.current_item = {
                 "category": category,
@@ -108,7 +94,6 @@ class WarehouseEditModal(Modal):
             self.add_item(self.quantity)
 
     def _resolve_item_index(self, session_key) -> int | None:
-        """Пытается определить актуальный индекс предмета в корзине."""
         items = WarehouseSession.get_items(session_key)
 
         if isinstance(self.item_index, int) and 0 <= self.item_index < len(items):
@@ -129,7 +114,6 @@ class WarehouseEditModal(Modal):
                 self.allowed_user_id = interaction.user.id
 
             if self.session_key is None:
-                # На старом коде работаем через user_id пользователя
                 self.session_key = interaction.user.id
 
             if interaction.user.id != self.allowed_user_id:
@@ -209,10 +193,39 @@ class WarehouseEditModal(Modal):
 
             items[self.item_index]["quantity"] = new_qty
 
-            await interaction.response.send_message(
-                f"✅ Обновлено: **{item_name}** — теперь **{new_qty}** шт.",
-                ephemeral=True,
-            )
+            if self.editing_request_message_id is not None and self.session_key:
+                await interaction.response.defer(ephemeral=True)
+                from views.warehouse_request_buttons import build_edit_cart_embed
+                from views.warehouse_actions import WarehouseActionView
+                is_staff = self.mode == "issue"
+                cart_embed = build_edit_cart_embed(self.session_key, is_staff)
+                view = WarehouseActionView(
+                    session_key=self.session_key,
+                    request_owner_id=self.request_owner_id,
+                    editing_request_message_id=self.editing_request_message_id,
+                    mode=self.mode,
+                )
+                try:
+                    await interaction.followup.edit_message(
+                        message_id=interaction.message.id,
+                        content=None,
+                        embed=cart_embed,
+                        view=view,
+                    )
+                    await interaction.followup.send(
+                        f"✅ Обновлено: **{item_name}** — теперь **{new_qty}** шт. Нажми **ОТПРАВИТЬ**, когда будешь готов.",
+                        ephemeral=True,
+                    )
+                except (discord.NotFound, discord.HTTPException):
+                    await interaction.followup.send(
+                        f"✅ Обновлено: **{item_name}** — теперь **{new_qty}** шт.",
+                        ephemeral=True,
+                    )
+            else:
+                await interaction.response.send_message(
+                    f"✅ Обновлено: **{item_name}** — теперь **{new_qty}** шт.",
+                    ephemeral=True,
+                )
 
         except Exception as e:
             logger.error("Ошибка в WarehouseEditModal.on_submit: %s", e, exc_info=True)

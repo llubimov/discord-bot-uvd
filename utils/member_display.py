@@ -10,7 +10,6 @@ _SEP_PATTERN = re.compile(r"\s*\|\s*", re.IGNORECASE)
 
 
 def get_member_name_surname(member: discord.Member | None) -> Tuple[str, str]:
-    """Из ника/display_name в формате «префикс | имя фамилия» возвращает (имя, фамилия). Иначе (первое слово, остальное)."""
     if not member:
         return "", ""
     raw = (member.display_name or member.name or "").strip()
@@ -30,6 +29,5 @@ def get_member_name_surname(member: discord.Member | None) -> Tuple[str, str]:
 
 
 def get_member_full_name(member: discord.Member | None) -> str:
-    """Одна строка «имя фамилия» для полей «Ваше имя и фамилия»."""
     name, surname = get_member_name_surname(member)
     return f"{name} {surname}".strip()

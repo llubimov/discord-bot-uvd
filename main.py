@@ -12,7 +12,7 @@ from typing import Awaitable, Callable
 import state
 from config import Config
 
-# ========== НАСТРОЙКА ЛОГИРОВАНИЯ ==========
+# ========== ЛОГИРОВАНИЕ ==========
 file_handler = RotatingFileHandler(
     Config.LOG_FILE,
     maxBytes=2 * 1024 * 1024,  # 2 MB
@@ -30,18 +30,21 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ========== НАСТРОЙКИ БОТА ==========
+# ========== БОТ ==========
 intents = discord.Intents.default()
 intents.message_content = Config.ENABLE_MESSAGE_CONTENT_INTENT
 intents.members = True
 
-bot = commands.Bot(command_prefix=Config.COMMAND_PREFIX, intents=intents)
+bot = commands.Bot(
+    command_prefix=Config.COMMAND_PREFIX,
+    intents=intents,
+    max_messages=Config.BOT_MAX_MESSAGES if Config.BOT_MAX_MESSAGES > 0 else None,
+)
 state.bot = bot
 _tree_synced_once = False
 
 
 def _slash_require_role_above_bot(interaction: discord.Interaction) -> bool:
-    """Проверка: только пользователи с ролью выше роли бота могут использовать slash-команду."""
     if not interaction.guild or not interaction.user:
         return False
     if not isinstance(interaction.user, discord.Member):
@@ -49,14 +52,10 @@ def _slash_require_role_above_bot(interaction: discord.Interaction) -> bool:
     me = interaction.guild.me
     if not me:
         return False
-    bot_top = me.top_role
-    user_top = interaction.user.top_role
-    if bot_top.position >= user_top.position:
-        return False
-    return True
+    return interaction.user.top_role.position > me.top_role.position
 
 
-# ========== ИМПОРТ МОДУЛЕЙ ==========
+# ========== ИМПОРТЫ ==========
 from database import init_db, delete_request
 from services.webhook_handler import WebhookHandler
 from services.cache import RoleCache, ChannelCache
@@ -75,8 +74,9 @@ from services.position_apply_orls import ApplyOrlsPositionManager
 from services.position_apply_academy import AcademyApplyPositionManager
 from services.position_admin_transfer import AdminTransferPositionManager
 from services.firing_position_manager import FiringPositionManager
+from utils import startup_log
 
-# ========== ИНИЦИАЛИЗАЦИЯ СЕРВИСОВ ==========
+# ========== СЕРВИСЫ ==========
 state.role_cache = RoleCache(bot)
 state.channel_cache = ChannelCache(bot)
 
@@ -93,32 +93,28 @@ academy_apply_manager = AcademyApplyPositionManager(bot)
 admin_transfer_manager = AdminTransferPositionManager(bot)
 firing_position_manager = FiringPositionManager(bot)
 
-# Хранилище фоновых задач (защита от повторного запуска в on_ready)
 if not hasattr(state, "background_tasks") or not isinstance(getattr(state, "background_tasks", None), dict):
     state.background_tasks = {}
 
-# Единый экземпляр кулдауна склада: используем singleton из services
 try:
     from services import warehouse_cooldown
     state.warehouse_cooldown = warehouse_cooldown
 except Exception as e:
-    logger.warning("⚠️ Не удалось подключить warehouse_cooldown: %s", e)
+    logger.warning("warehouse_cooldown не загружен: %s", e)
 
 
 def _bg_task_done(task_name: str, task: asyncio.Task) -> None:
-    """Логирование завершения фоновой задачи и очистка ссылки из state."""
     try:
         if task.cancelled():
-            logger.warning("⚠️ Фоновая задача '%s' была отменена", task_name)
+            logger.warning("Фоновая задача '%s' отменена", task_name)
             return
-
         exc = task.exception()
         if exc is not None:
-            logger.error("❌ Фоновая задача '%s' завершилась с ошибкой: %s", task_name, exc, exc_info=exc)
+            logger.error("Фоновая задача '%s' упала: %s", task_name, exc, exc_info=exc)
         else:
-            logger.warning("⚠️ Фоновая задача '%s' неожиданно завершилась без ошибки", task_name)
-    except Exception as callback_error:
-        logger.error("❌ Ошибка в callback фоновой задачи '%s': %s", task_name, callback_error, exc_info=True)
+            logger.warning("Фоновая задача '%s' завершилась", task_name)
+    except Exception as e:
+        logger.error("Ошибка в callback задачи '%s': %s", task_name, e, exc_info=True)
     finally:
         current = getattr(state, "background_tasks", {}).get(task_name)
         if current is task:
@@ -126,26 +122,21 @@ def _bg_task_done(task_name: str, task: asyncio.Task) -> None:
 
 
 def _ensure_background_task(task_name: str, coro_factory: Callable[[], Awaitable]) -> None:
-    """Запускает фоновую задачу только один раз (даже если on_ready вызван повторно)."""
     existing = getattr(state, "background_tasks", {}).get(task_name)
     if existing and not existing.done():
-        logger.info("ℹ️ Фоновая задача '%s' уже запущена, повторный запуск пропущен", task_name)
         return
-
     task = asyncio.create_task(coro_factory(), name=f"uvd:{task_name}")
     state.background_tasks[task_name] = task
     task.add_done_callback(lambda t, name=task_name: _bg_task_done(name, t))
-    logger.info("▶️ Запущена фоновая задача: %s", task_name)
+    logger.info("Запущена фоновая задача: %s", task_name)
 
 
-# ============================================================================
-# SLASH-КОМАНДЫ (/) — только для пользователей с ролью выше роли бота
-# ============================================================================
+# --- Slash-команды (роль выше роли бота) ---
 
 NO_ROLE_ABOVE_BOT = "❌ Команда доступна только участникам с ролью выше роли бота."
 
 
-@bot.tree.command(name="ping", description="-")
+@bot.tree.command(name="ping", description="Задержка бота")
 async def ping_slash(interaction: discord.Interaction):
     if not _slash_require_role_above_bot(interaction):
         await interaction.response.send_message(NO_ROLE_ABOVE_BOT, ephemeral=True)
@@ -210,64 +201,74 @@ async def clear_firing_slash(interaction: discord.Interaction, days: int = 7):
             f"✅ Удалено {deleted_count} старых заявок на увольнение (память + БД)",
             ephemeral=True,
         )
-        logger.info("🧹 Очистка заявок на увольнение через /clear_firing: %s", deleted_count)
+        logger.info("Очистка заявок на увольнение /clear_firing: %s", deleted_count)
     except Exception as e:
         logger.error("Ошибка /clear_firing: %s", e, exc_info=True)
         await interaction.followup.send("❌ Ошибка при очистке.", ephemeral=True)
 
 
-# ============================================================================
-
-
-# ============================================================================
-# СОБЫТИЕ ON_READY
-# ============================================================================
+# --- ON_READY ---
 
 @bot.event
 async def on_ready():
-    """Выполняется при запуске бота и при повторных подключениях."""
+    startup_log.banner_start()
 
-    logger.info("=" * 60)
-    logger.info("🤖 БОТ ЗАПУЩЕН / ПОДКЛЮЧЕН: %s", bot.user)
-    logger.info("=" * 60)
+    startup_log.section("Подключение")
+    startup_log.step("Бот", str(bot.user))
+    if bot.user:
+        startup_log.step("ID бота", str(bot.user.id))
 
-    # 1) База данных
+    startup_log.section("База данных")
     try:
         await asyncio.to_thread(init_db)
-        logger.info("✅ База данных подключена")
+        startup_log.step("БД подключена", "OK")
     except Exception as e:
-        logger.critical("❌ Не удалось инициализировать БД (путь/права?): %s", e, exc_info=True)
+        logger.critical("БД не поднялась: %s", e, exc_info=True)
         raise
 
-    # 2) Синхронизация slash-команд (только один раз). Одна синхронизация — глобальная, чтобы в Discord отображались только текущие 4 команды (без старых /info, /help_uvd).
+    startup_log.section("Слэш-команды")
     global _tree_synced_once
     if not _tree_synced_once:
         try:
-            synced = await bot.tree.sync()
-            logger.info("✅ Синхронизировано %s slash-команд: %s", len(synced), [c.name for c in synced])
+            if Config.GUILD_ID:
+                synced = await bot.tree.sync(guild=discord.Object(id=Config.GUILD_ID))
+            else:
+                synced = await bot.tree.sync()
+            names = [c.name for c in synced]
+            startup_log.step("Синхронизированы", ", ".join(names) if names else "—")
             _tree_synced_once = True
         except Exception as e:
-            logger.error("❌ Ошибка синхронизации slash-команд: %s", e, exc_info=True)
+            logger.error("Ошибка синхронизации команд: %s", e, exc_info=True)
+            startup_log.step("Ошибка синхронизации", str(e))
     else:
-        logger.info("ℹ️ Синхронизация команд пропущена (уже выполнена ранее)")
+        startup_log.step("Уже синхронизированы", "—")
 
-    # 3) Восстановление view
+    startup_log.section("Восстановление View")
     try:
         await view_restorer.restore_all()
-        logger.info("✅ Восстановление View завершено")
+        startup_log.step("View восстановлены", "OK")
     except Exception as e:
-        logger.error("❌ Ошибка восстановления View: %s", e, exc_info=True)
+        logger.error("Ошибка восстановления View: %s", e, exc_info=True)
+        startup_log.step("Ошибка восстановления", str(e))
 
-    # 4) Диагностика при запуске
+    startup_log.section("Проверки при запуске")
     try:
         await run_startup_checks(bot)
-        await run_health_report(bot)
-        if Config.GUILD_ID and not bot.get_guild(Config.GUILD_ID):
-            logger.critical("⚠️ GUILD_ID=%s не найден — укажите правильный ID сервера в .env", Config.GUILD_ID)
+        startup_log.step("Каналы и роли", "проверены")
     except Exception as e:
-        logger.error("❌ Ошибка стартовой диагностики: %s", e, exc_info=True)
+        logger.error("Стартовая проверка: %s", e, exc_info=True)
+        startup_log.step("Ошибка проверок", str(e))
 
-    # 5) Фоновые задачи (запуск только один раз)
+    startup_log.section("Состояние")
+    try:
+        await run_health_report(bot)
+        startup_log.step("Отчёт состояния", "выведен выше")
+    except Exception as e:
+        logger.error("Ошибка отчёта состояния: %s", e, exc_info=True)
+    if Config.GUILD_ID and not bot.get_guild(Config.GUILD_ID):
+        logger.critical("GUILD_ID=%s не найден", Config.GUILD_ID)
+
+    startup_log.section("Фоновые задачи")
     _ensure_background_task("start_position_checker", start_manager.start_checking)
     _ensure_background_task("warehouse_position_checker", warehouse_position_manager.start_checking)
     _ensure_background_task("cleanup_manager", cleanup_manager.start_cleanup)
@@ -286,14 +287,15 @@ async def on_ready():
     if getattr(Config, "FIRING_CHANNEL_ID", 0):
         _ensure_background_task("firing_position_checker", firing_position_manager.start_checking)
 
-    logger.info("=" * 60)
-    logger.info("✅ БОТ ГОТОВ К РАБОТЕ")
-    logger.info("=" * 60)
+    guild = bot.get_guild(Config.GUILD_ID) if Config.GUILD_ID else None
+    startup_log.banner_ready(
+        str(bot.user),
+        guild_name=guild.name if guild else None,
+        guild_id=Config.GUILD_ID or None,
+    )
 
 
-# ============================================================================
-# ОБРАБОТЧИК СООБЩЕНИЙ
-# ============================================================================
+# --- Сообщения ---
 
 @bot.event
 async def on_message(message):
@@ -317,22 +319,13 @@ async def on_member_remove(member: discord.Member):
         from modals.firing_apply_modal import post_auto_firing_report
         await post_auto_firing_report(member)
     except Exception as e:
-        logger.warning("Ошибка при авто-рапорте увольнения (member_remove): %s", e, exc_info=True)
+        logger.warning("Ошибка при авто-рапорте увольнения: %s", e, exc_info=True)
 
-
-# ============================================================================
-# ЗАПУСК БОТА
-# ============================================================================
 
 if __name__ == "__main__":
     try:
-        logger.info("=" * 60)
-        logger.info("🚀 ЗАПУСК БОТА...")
-        logger.info("=" * 60)
         bot.run(Config.TOKEN, log_handler=None)
-
     except discord.LoginError:
-        logger.critical("❌ Ошибка авторизации! Проверьте токен в .env")
-
+        logger.critical("Неверный токен в .env")
     except Exception as e:
-        logger.critical("❌ Критическая ошибка: %s", e, exc_info=True)
+        logger.critical("Критическая ошибка: %s", e, exc_info=True)

@@ -6,10 +6,9 @@ from config import Config
 def _max_embed_fields():
     return getattr(Config, "MAX_EMBED_FIELDS", 25)
 
-def update_embed_status(embed, new_status: str, color: discord.Color = None):
-    """Обновляет статус в embed"""
-    if color:
-        embed.color = color
+def update_embed_status(embed, new_status: str, color=None):
+    if color is not None:
+        embed.color = int(color) if isinstance(color, int) else color
     max_fields = _max_embed_fields()
     for i, field in enumerate(embed.fields):
         if (field.name or "").strip().lower() == FieldNames.STATUS.lower():
@@ -32,7 +31,6 @@ def update_embed_status(embed, new_status: str, color: discord.Color = None):
     return embed
 
 def add_officer_field(embed, officer_mention: str):
-    """Добавляет информацию о сотруднике"""
     max_fields = _max_embed_fields()
     if len(embed.fields) >= max_fields:
         for i, field in enumerate(embed.fields):
@@ -47,7 +45,6 @@ def add_officer_field(embed, officer_mention: str):
     return embed
 
 def add_reject_reason(embed, reason: str):
-    """Добавляет причину отказа"""
     max_fields = _max_embed_fields()
     if len(embed.fields) >= max_fields:
         for i, field in enumerate(embed.fields):
@@ -62,14 +59,9 @@ def add_reject_reason(embed, reason: str):
     return embed
 
 def copy_embed(embed) -> discord.Embed:
-    """Создает копию embed"""
     return discord.Embed.from_dict(embed.to_dict())
 
 def safe_add_field(embed, name: str, value: str, inline: bool = False) -> bool:
-    """
-    Безопасно добавляет поле с проверкой лимита
-    Возвращает True если поле добавлено, False если лимит достигнут
-    """
     max_fields = _max_embed_fields()
     if len(embed.fields) >= max_fields:
         logger = logging.getLogger(__name__)
@@ -80,9 +72,7 @@ def safe_add_field(embed, name: str, value: str, inline: bool = False) -> bool:
     return True
 
 def get_fields_count(embed) -> int:
-    """Возвращает количество полей"""
     return len(embed.fields)
 
 def has_space_for_fields(embed, needed: int = 1) -> bool:
-    """Проверяет, есть ли место для нужного количества полей"""
     return len(embed.fields) + needed <= _max_embed_fields()

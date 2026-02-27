@@ -1,6 +1,7 @@
 import discord
 from discord.ui import Modal, TextInput
 import logging
+from config import Config
 from views.training_buttons import ExamView
 from constants import ExamMessages
 
@@ -26,17 +27,23 @@ class ExamModal(Modal):
             default=name_default,
         )
         self.add_item(self.name)
-    
+
     async def on_submit(self, interaction: discord.Interaction):
         from datetime import datetime
         import random
 
-        text = ExamMessages.EXAM_NOTIFICATION.format(
-            header=ExamMessages.HEADER,
-            date=datetime.now().strftime("«%d» %B %Y года"),
+        now = datetime.now()
+        month_name = ExamMessages.MONTHS.get(now.month, now.strftime("%B"))
+        date_str = f"«{now.day}» {month_name} {now.year} года"
+
+        congrats = Config.EXAM_CONGRATS
+        greeting = random.choice(congrats) if congrats else "Добро пожаловать!"
+
+        text = Config.EXAM_NOTIFICATION_TEMPLATE.format(
+            header=Config.EXAM_HEADER,
+            date=date_str,
             name=self.name.value,
-            greeting=random.choice(ExamMessages.CONGRATS),
-            report_id=f"УВД-{random.randint(1000, 9999)}"
+            greeting=greeting,
         )
         
         embed = discord.Embed(

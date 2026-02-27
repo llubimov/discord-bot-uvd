@@ -42,6 +42,12 @@ def _env_str(name: str, default: str = "") -> str:
     return (os.getenv(name, "") or "").strip() or default
 
 
+def _parse_str_list(raw: str, separator: str = ",") -> list[str]:
+    if not raw:
+        return []
+    return [p.strip() for p in str(raw).split(separator) if p.strip()]
+
+
 def _parse_prefixed_int_list(prefix: str) -> list[int]:
     pairs: list[tuple[str, int]] = []
 
@@ -114,7 +120,17 @@ def _parse_promotion_channels_legacy(raw: str) -> dict[int, int]:
 
 
 def _parse_prefixed_channel_role_map(prefix: str) -> dict[int, int]:
-    result: dict[int, int] = {}
+    """
+    Разбирает переменные окружения вида:
+    PREFIX_01="123456789012345678:111,222"
+
+    Возвращает словарь:
+        {channel_id: [role_id, ...], ...}
+
+    Для обратной совместимости также поддерживает формат без запятых:
+        PREFIX_01="123:111"  -> {123: [111]}
+    """
+    result: dict[int, list[int]] = {}
 
     for key, value in os.environ.items():
         if not key.startswith(prefix):
@@ -124,11 +140,26 @@ def _parse_prefixed_channel_role_map(prefix: str) -> dict[int, int]:
         if ":" not in raw:
             continue
 
-        channel_id_str, role_id_str = raw.split(":", 1)
+        channel_id_str, role_ids_str = raw.split(":", 1)
         try:
-            result[int(channel_id_str.strip())] = int(role_id_str.strip())
+            ch_id = int(channel_id_str.strip())
         except ValueError:
             continue
+
+        role_ids: list[int] = []
+        for part in role_ids_str.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                role_ids.append(int(part))
+            except ValueError:
+                continue
+
+        if not role_ids:
+            continue
+
+        result[ch_id] = role_ids
 
     return result
 
@@ -209,6 +240,8 @@ class Config:
     LOG_FILE = _env_str("LOG_FILE", "bot.log")
     LOG_FORMAT = _env_str("LOG_FORMAT", "%(asctime)s - %(name)s - %(levelname)s - %(message)s")
     LOG_LEVEL = getattr(logging, os.getenv("LOG_LEVEL", "INFO").upper(), logging.INFO)
+    # Кэш сообщений: меньше = меньше памяти (по умолчанию 1000). 0 = отключить кэш.
+    BOT_MAX_MESSAGES = _env_int("BOT_MAX_MESSAGES", 500)
 
     # База данных
     DB_PATH = os.getenv("DB_PATH", "").strip()
@@ -219,6 +252,7 @@ class Config:
     TRANSFER_STAFF_ROLE_ID = _env_int("TRANSFER_STAFF_ROLE_ID", 0)
     GOV_STAFF_ROLE_ID = _env_int("GOV_STAFF_ROLE_ID", 0)
     FIRING_STAFF_ROLE_ID = _env_int("FIRING_STAFF_ROLE_ID", 0)
+    FIRING_SENIOR_ROLE_ID = _env_int("FIRING_SENIOR_ROLE_ID", 0)
     WAREHOUSE_STAFF_ROLE_ID = _env_int("WAREHOUSE_STAFF_ROLE_ID", 0)
 
     # Роли выдачи (новый формат в .env: *_ROLE_01, *_ROLE_02...; старый CSV тоже поддерживается)
@@ -286,10 +320,16 @@ class Config:
 
     ROLE_PASSED_ACADEMY = _env_int("ROLE_PASSED_ACADEMY", 0) or ROLE_ACADEMY
 
-    # Каналы повышений
+    # Каналы повышений (канал -> список ролей кадровика)
+    # Формат в .env:
+    #   PROMOTION_CH_01=channel_id:role_id                (одна роль)
+    #   PROMOTION_CH_02=channel_id:role_id1,role_id2,...  (несколько ролей)
     PROMOTION_CHANNELS = _parse_prefixed_channel_role_map("PROMOTION_CH_")
     if not PROMOTION_CHANNELS:
-        PROMOTION_CHANNELS = _parse_promotion_channels_legacy(os.getenv("PROMOTION_CHANNELS", ""))
+        # Легаси-формат: "chan1:role1,chan2:role2"
+        legacy_map = _parse_promotion_channels_legacy(os.getenv("PROMOTION_CHANNELS", ""))
+        PROMOTION_CHANNELS = {cid: [rid] for cid, rid in legacy_map.items()}
+
     if not PROMOTION_CHANNELS:
         raise ValueError(
             "PROMOTION_CHANNELS / PROMOTION_CH_* не заданы в .env. "
@@ -302,6 +342,18 @@ class Config:
     START_MESSAGE_CHECK_INTERVAL = _env_int("START_MESSAGE_CHECK_INTERVAL", 60)
     WAREHOUSE_COOLDOWN_HOURS = _env_int("WAREHOUSE_COOLDOWN_HOURS", 6)
     EXAM_BUTTON_TIMEOUT = _env_int("EXAM_BUTTON_TIMEOUT", 120)
+    # Таймауты View склада (сек): корзина и подменю выбора категории/предмета
+    WAREHOUSE_CART_TIMEOUT = _env_int("WAREHOUSE_CART_TIMEOUT", 300)
+    WAREHOUSE_SUBVIEW_TIMEOUT = _env_int("WAREHOUSE_SUBVIEW_TIMEOUT", 180)
+    # Тексты статусов заявок на перевод (отображаются в embed после одобрения)
+    DEPT_TRANSFER_STATUS_APPROVED_SOURCE = _env_str(
+        "DEPT_TRANSFER_STATUS_APPROVED_SOURCE",
+        "🟡 Одобрено отделом-источником, ожидает одобрения целевого отдела.",
+    )
+    DEPT_TRANSFER_STATUS_APPROVED_FULL = _env_str(
+        "DEPT_TRANSFER_STATUS_APPROVED_FULL",
+        "🟢 Перевод одобрен и роли обновлены.",
+    )
 
     # Префиксы ников
     CADET_NICKNAME_PREFIX = os.getenv("CADET_NICKNAME_PREFIX", "Курсант |").strip()
@@ -327,18 +379,24 @@ class Config:
             "Укажите соответствие повышения и ID роли."
         )
 
-    NON_PPS_RANKS = [
-        "рядовой -> младший сержант",
-        "рядовой → младший сержант",
-        "младший сержант",
-    ]
+    # Списки формулировок званий для парсинга рапортов повышения (через запятую в .env)
+    _non_pps_raw = _env_str("RANK_NON_PPS", "рядовой -> младший сержант,рядовой → младший сержант,младший сержант")
+    NON_PPS_RANKS = _parse_str_list(_non_pps_raw)
+    if not NON_PPS_RANKS:
+        NON_PPS_RANKS = ["рядовой -> младший сержант", "рядовой → младший сержант", "младший сержант"]
 
-    SERGEANT_PROMOTIONS = [
-        "младший сержант -> сержант",
-        "младший сержант → сержант",
-        "Младший Сержант -> Сержант",
-        "Младший Сержант → Сержант",
-    ]
+    _sergeant_raw = _env_str(
+        "RANK_SERGEANT_PROMOTIONS",
+        "младший сержант -> сержант,младший сержант → сержант,Младший Сержант -> Сержант,Младший Сержант → Сержант",
+    )
+    SERGEANT_PROMOTIONS = _parse_str_list(_sergeant_raw)
+    if not SERGEANT_PROMOTIONS:
+        SERGEANT_PROMOTIONS = [
+            "младший сержант -> сержант",
+            "младший сержант → сержант",
+            "Младший Сержант -> Сержант",
+            "Младший Сержант → Сержант",
+        ]
 
     # Аудит
     AUDIT_FORM_URL = os.getenv("AUDIT_FORM_URL", "").strip()
@@ -375,7 +433,54 @@ class Config:
     EXAM_HERB_URL = os.getenv("EXAM_HERB_URL", "").strip()
     EXAM_SEAL_URL = os.getenv("EXAM_SEAL_URL", "").strip()
 
-    NAME_PATTERN = r"^[а-яА-Яa-zA-Z\- ]+$"
-    RANK_PATTERN = r"^[а-яА-Яa-zA-Z\s\-\.]+$"
-    URL_PATTERN = r"^https?://"
-    STATIC_ID_FORMAT = "{}-{}"
+    # Регулярные выражения и формат (редактируемые через .env)
+    NAME_PATTERN = _env_str("NAME_PATTERN", r"^[а-яА-Яa-zA-Z\- ]+$")
+    RANK_PATTERN = _env_str("RANK_PATTERN", r"^[а-яА-Яa-zA-Z\s\-\.]+$")
+    URL_PATTERN = _env_str("URL_PATTERN", r"^https?://")
+    STATIC_ID_FORMAT = _env_str("STATIC_ID_FORMAT", "{}-{}")
+
+    # ----- Тексты стартовых сообщений и склада (если пусто в .env — дефолты ниже) -----
+    START_MSG_TITLE = _env_str("START_MSG_TITLE", "Подача заявки")
+    START_MSG_DESCRIPTION = _env_str(
+        "START_MSG_DESCRIPTION",
+        "**Выберите тип заявки:**\n\n"
+        "🟢 **Курсант** — зачисление в академию\n"
+        "🔵 **Перевод** — из другой структуры\n"
+        "⚪ **Гос. сотрудник** — для гостей\n\n"
+        "⏱ Новую заявку можно отправить через {cooldown} сек. Хранение: {expiry_days} дней.",
+    )
+    WAREHOUSE_START_TITLE = _env_str("WAREHOUSE_START_TITLE", "Склад УВД")
+    WAREHOUSE_START_DESCRIPTION = _env_str(
+        "WAREHOUSE_START_DESCRIPTION",
+        "**Запрос снаряжения** — новый запрос или корзина.\n"
+        "**Моя корзина** — текущий состав.\n\n"
+        "Лимиты: оружие — 3 ед., броня — 20 шт., медицина — 20 шт. Ограничение: раз в {cooldown_hours} ч.",
+    )
+    WAREHOUSE_REQUEST_TITLE = _env_str("WAREHOUSE_REQUEST_TITLE", "Заявка на снаряжение")
+    WAREHOUSE_REQUEST_FOOTER = _env_str("WAREHOUSE_REQUEST_FOOTER", "Создано: {time}")
+
+    # Тексты приказа/экзамена в ЛС курсанту (опционально переопределяются из .env)
+    EXAM_WELCOME_TITLE = _env_str("EXAM_WELCOME_TITLE", "🎓 Вы приняты на службу")
+    EXAM_WELCOME_SUBTITLE = _env_str("EXAM_WELCOME_SUBTITLE", "Управление внутренних дел • Кадровый департамент")
+    EXAM_HEADER = _env_str("EXAM_HEADER", "Управление внутренних дел • Кадровый департамент")
+    EXAM_ORDER_TEXT = _env_str(
+        "EXAM_ORDER_TEXT",
+        "**ПРИКАЗ № {report_id}**\n"
+        "от {day} {month} {year} г.\n\n"
+        "**ПРИКАЗЫВАЮ:**\n"
+        "1. Зачислить **{name}** в Академию УВД.\n"
+        "2. Присвоить статус «Курсант».\n"
+        "3. Направить для прохождения вступительных испытаний.\n\n"
+        "_Основание: рапорт №{report_id}_",
+    )
+    EXAM_NOTIFICATION_TEMPLATE = _env_str(
+        "EXAM_NOTIFICATION_TEMPLATE",
+        "{header}\n\nДата: {date}\nУчастник: **{name}**\n\n{greeting}",
+    )
+    _exam_congrats_raw = _env_str(
+        "EXAM_CONGRATS",
+        "Добро пожаловать! Ожидайте дальнейших указаний.|Удачи на экзамене!",
+    )
+    EXAM_CONGRATS = _parse_str_list(_exam_congrats_raw, "|")
+    if not EXAM_CONGRATS:
+        EXAM_CONGRATS = ["Добро пожаловать! Ожидайте дальнейших указаний.", "Удачи на экзамене!"]

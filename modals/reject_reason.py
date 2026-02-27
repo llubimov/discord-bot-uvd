@@ -3,6 +3,7 @@ from discord.ui import Modal, TextInput
 import logging
 import asyncio
 from config import Config
+from views.theme import RED
 from views.message_texts import ErrorMessages
 from enums import RequestType
 from state import active_requests, bot
@@ -51,7 +52,7 @@ class RejectReasonModal(Modal, title='Отклонение заявки'):
             embed = copy_embed(message.embeds[0])
             embed = add_officer_field(embed, interaction.user.mention)
             embed = add_reject_reason(embed, reason)
-            embed.color = discord.Color.red()
+            embed.color = RED
 
             # 🔥 ПОЛНОСТЬЮ УБИРАЕМ КНОПКИ (view=None)
             await message.edit(embed=embed, view=None)
@@ -60,8 +61,8 @@ class RejectReasonModal(Modal, title='Отклонение заявки'):
             if member:
                 try:
                     notification = discord.Embed(
-                        title="❌ Заявка отклонена",
-                        color=discord.Color.red(),
+                        title="Заявка отклонена",
+                        color=RED,
                         description=f"**{interaction.guild.name}**\n\nВаша заявка была отклонена.",
                         timestamp=interaction.created_at
                     )

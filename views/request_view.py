@@ -6,6 +6,7 @@ import asyncio
 from config import Config
 from enums import RequestType
 from state import active_requests, bot
+import state
 from utils.rate_limiter import apply_role_changes
 from utils.embed_utils import update_embed_status, add_officer_field, copy_embed
 from services.audit import send_to_audit
@@ -14,6 +15,7 @@ from database import delete_request
 from modals.reject_reason import RejectReasonModal
 from modals.edit_request import EditRequestModal
 from constants import StatusValues, FieldNames
+from views.theme import GREEN
 from views.message_texts import AcceptMessages, ErrorMessages, SuccessMessages
 
 logger = logging.getLogger(__name__)
@@ -78,7 +80,16 @@ class RequestView(View):
         try:
             async with action_lock(interaction.message.id, "принятие заявки"):
                 roles_to_give = self.request_type.get_roles_to_give()
-                roles = [interaction.guild.get_role(rid) for rid in roles_to_give if interaction.guild.get_role(rid)]
+                # Роли через кэш, если он инициализирован
+                roles = []
+                try:
+                    role_cache = getattr(state, "role_cache", None)
+                except Exception:
+                    role_cache = None
+                if role_cache is not None:
+                    roles = [r for r in await role_cache.get_many_roles(interaction.guild.id, roles_to_give) if r]
+                else:
+                    roles = [interaction.guild.get_role(rid) for rid in roles_to_give if interaction.guild.get_role(rid)]
                 await apply_role_changes(member, add=roles)
 
                 try:
@@ -110,7 +121,7 @@ class RequestView(View):
                     herb_url = (getattr(Config, "EXAM_HERB_URL", None) or "").strip() or ExamMessages.HERB_URL
                     seal_url = (getattr(Config, "EXAM_SEAL_URL", None) or "").strip() or ExamMessages.SEAL_URL
 
-                    order_text = ExamMessages.WELCOME_TEXT.format(
+                    order_text = Config.EXAM_ORDER_TEXT.format(
                         report_id=report_id,
                         day=now.day,
                         month=ExamMessages.MONTHS[now.month],
@@ -119,13 +130,13 @@ class RequestView(View):
                     )
 
                     embed = discord.Embed(
-                        title=ExamMessages.WELCOME_TITLE,
+                        title=Config.EXAM_WELCOME_TITLE,
                         description=order_text,
                         color=0x1E5F8C,
                         timestamp=discord.utils.utcnow(),
                     )
                     embed.set_author(
-                        name=ExamMessages.WELCOME_SUBTITLE,
+                        name=Config.EXAM_WELCOME_SUBTITLE,
                         icon_url=herb_url,
                     )
                     embed.set_thumbnail(url=herb_url)
@@ -161,7 +172,7 @@ class RequestView(View):
 
                 # Обновление embed
                 embed = copy_embed(interaction.message.embeds[0])
-                embed = update_embed_status(embed, StatusValues.ACCEPTED, discord.Color.green())
+                embed = update_embed_status(embed, StatusValues.ACCEPTED, GREEN)
                 embed = add_officer_field(embed, interaction.user.mention)
 
                 await interaction.message.edit(embed=embed, view=None)

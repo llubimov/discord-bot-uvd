@@ -16,17 +16,46 @@ class FiringStartView(discord.ui.View):
         btn.callback = self._on_click
         self.add_item(btn)
 
+        senior_btn = discord.ui.Button(
+            label="Уволить",
+            style=discord.ButtonStyle.danger,
+            custom_id="firing_senior_fire_btn",
+            emoji="⚠️",
+        )
+        senior_btn.callback = self._on_senior_fire
+        self.add_item(senior_btn)
+
     async def _on_click(self, interaction: discord.Interaction):
         from modals.firing_apply_modal import FiringApplyModal
         member = interaction.user if isinstance(interaction.user, discord.Member) else None
         modal = FiringApplyModal(member=member)
         await interaction.response.send_modal(modal)
 
+    async def _on_senior_fire(self, interaction: discord.Interaction):
+        if not interaction.guild:
+            await interaction.response.send_message("❌ Только на сервере.", ephemeral=True)
+            return
+        senior_role_id = getattr(Config, "FIRING_SENIOR_ROLE_ID", 0) or 0
+        if not senior_role_id:
+            await interaction.response.send_message("❌ Кнопка «Уволить» не настроена (FIRING_SENIOR_ROLE_ID).", ephemeral=True)
+            return
+        senior_role = interaction.guild.get_role(int(senior_role_id))
+        if not senior_role or senior_role not in (interaction.user.roles or []):
+            await interaction.response.send_message("❌ Только старший состав может нажимать эту кнопку.", ephemeral=True)
+            return
+        from modals.firing_by_senior_modal import FiringBySeniorModal
+        await interaction.response.send_modal(FiringBySeniorModal())
+
 
 class FiringPositionManager(BasePositionManager):
     @property
     def channel_id(self) -> int:
         return Config.FIRING_CHANNEL_ID
+
+    @property
+    def check_interval(self) -> int:
+        # Шапка увольнений должна быть более стабильной — проверяем раз в минуту
+        return 60
 
     async def get_embed(self) -> discord.Embed:
         embed = discord.Embed(

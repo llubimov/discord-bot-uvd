@@ -58,7 +58,17 @@ class BasePositionManager(ABC):
             logger.debug("Пропуск ensure_position: обновление уже выполняется (канал %s)", self.channel_id)
             return
 
-        channel = self.bot.get_channel(self.channel_id)
+        # Канал через кэш, если он инициализирован
+        channel = None
+        try:
+            import state as _state_for_channel  # локальный импорт, чтобы избежать циклов
+            cache = getattr(_state_for_channel, "channel_cache", None)
+            if cache is not None:
+                channel = cache.get_channel(self.channel_id)
+        except Exception:
+            channel = None
+        if channel is None:
+            channel = self.bot.get_channel(self.channel_id)
         if not channel:
             logger.error("Канал %s не найден", self.channel_id)
             return

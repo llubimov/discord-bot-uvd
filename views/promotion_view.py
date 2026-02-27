@@ -5,6 +5,7 @@ import asyncio
 import re
 
 from config import Config
+from views.theme import GREEN
 from views.message_texts import ErrorMessages
 from state import active_promotion_requests
 from utils.rate_limiter import apply_role_changes
@@ -39,18 +40,64 @@ class PromotionView(View):
         self.full_name = str(full_name or "сотрудник").strip() or "сотрудник"
         self.message_id = int(message_id)
 
+    @staticmethod
+    def _normalize_transition_string(value: str) -> str:
+        """
+        Нормализует строку перехода звания:
+        - убирает лишние пробелы
+        - если есть позывной/префикс вида «XXX | ...», оставляет часть,
+          в которой содержится переход ранга («... -> ...»), или последнюю часть.
+        """
+        text = (value or "").strip()
+        if not text:
+            return text
+
+        if "|" in text:
+            parts = [p.strip() for p in text.split("|") if p.strip()]
+            arrow_syms = ("->", "→", "➡", "⇒")
+            with_arrow = [p for p in parts if any(sym in p for sym in arrow_syms)]
+            if with_arrow:
+                text = with_arrow[0]
+            else:
+                text = parts[-1]
+
+        return text
+
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         if not interaction.guild:
             await interaction.response.send_message("❌ Команда доступна только на сервере.", ephemeral=True)
             return False
 
-        required_role_id = Config.PROMOTION_CHANNELS.get(interaction.channel.id)
-        if not required_role_id:
+        role_ids = list(Config.PROMOTION_CHANNELS.get(interaction.channel.id, []) or [])
+        if not role_ids:
             await interaction.response.send_message("❌ Для этого канала не настроена роль доступа.", ephemeral=True)
             return False
 
-        staff_role = interaction.guild.get_role(int(required_role_id))
-        if not staff_role or staff_role not in interaction.user.roles:
+        custom_id = (interaction.data or {}).get("custom_id")
+
+        # Первая роль в списке — «основной кадровик»,
+        # только он может одобрять рапорт (кнопка promotion_accept).
+        main_role_id = int(role_ids[0])
+        extra_role_ids = [int(rid) for rid in role_ids[1:]]
+
+        member_roles = set(interaction.user.roles or [])
+
+        if custom_id == "promotion_accept":
+            staff_role = interaction.guild.get_role(main_role_id)
+            if not staff_role or staff_role not in member_roles:
+                await interaction.response.send_message(ErrorMessages.NO_PERMISSION, ephemeral=True)
+                return False
+            return True
+
+        # Для отклонения (promotion_reject) могут использоваться несколько ролей:
+        # основная + дополнительные из списка.
+        allowed_roles = []
+        for rid in [main_role_id, *extra_role_ids]:
+            role = interaction.guild.get_role(int(rid))
+            if role:
+                allowed_roles.append(role)
+
+        if not any(r in member_roles for r in allowed_roles):
             await interaction.response.send_message(ErrorMessages.NO_PERMISSION, ephemeral=True)
             return False
         return True
@@ -113,7 +160,6 @@ class PromotionView(View):
         }
 
     async def handle_accept(self, interaction: discord.Interaction):
-        """Обработка принятия заявки на повышение"""
         await interaction.response.defer(ephemeral=True)
 
         try:
@@ -184,17 +230,22 @@ class PromotionView(View):
                 if request_data:
                     rank_transition = (request_data.get("rank_transition") or "").strip()
 
-                role_lookup_value = rank_transition or self.new_rank
+                raw_lookup_value = rank_transition or self.new_rank
+                role_lookup_value = self._normalize_transition_string(raw_lookup_value)
                 new_role_id = find_role_id_for_transition(role_lookup_value)
 
                 if not new_role_id:
+                    display_rank = self._normalize_transition_string(self.new_rank or raw_lookup_value)
                     await interaction.followup.send(
-                        f"❌ Не настроена роль для повышения: `{self.new_rank}`. Проверь RANK_ROLE_MAPPING.",
+                        f"❌ Не настроена роль для повышения: `{display_rank}`. Проверь RANK_ROLE_MAPPING.",
                         ephemeral=True
                     )
                     logger.warning(
-                        "Promotion: не найдена роль | lookup='%s' | display_rank='%s' | msg_id=%s",
-                        role_lookup_value, self.new_rank, self.message_id
+                        "Promotion: не найдена роль | raw_lookup='%s' | lookup='%s' | display_rank='%s' | msg_id=%s",
+                        raw_lookup_value,
+                        role_lookup_value,
+                        display_rank,
+                        self.message_id,
                     )
                     return
 
@@ -301,9 +352,9 @@ class PromotionView(View):
                 dm_warning = None
                 try:
                     embed = discord.Embed(
-                        title="✅ Рапорт на повышение одобрен",
-                        color=discord.Color.green(),
-                        description=f"**{interaction.guild.name}**\n\nВаш рапорт на повышение был одобрен.",
+                        title="Рапорт на повышение одобрен",
+                        color=GREEN,
+                        description=f"**{interaction.guild.name}**\n\nВаш рапорт на повышение одобрен.",
                         timestamp=interaction.created_at
                     )
                     embed.add_field(name="Новое звание", value=self.new_rank, inline=True)
@@ -335,7 +386,7 @@ class PromotionView(View):
                     return
 
                 new_embed = copy_embed(message.embeds[0])
-                new_embed = update_embed_status(new_embed, StatusValues.ACCEPTED, discord.Color.green())
+                new_embed = update_embed_status(new_embed, StatusValues.ACCEPTED, GREEN)
                 new_embed = add_officer_field(new_embed, interaction.user.mention)
 
                 try:

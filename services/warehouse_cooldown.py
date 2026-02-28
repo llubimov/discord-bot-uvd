@@ -13,7 +13,6 @@ class WarehouseCooldown:
         self.cooldown_hours = Config.WAREHOUSE_COOLDOWN_HOURS
 
     async def load_from_db(self) -> None:
-        """Загрузить кулдауны из БД (вызывать при старте после init_db)."""
         try:
             from database import warehouse_cooldown_get_all
             self.last_issue = await warehouse_cooldown_get_all()

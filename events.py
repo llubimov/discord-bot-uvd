@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""Обработчики событий бота: on_ready, on_message, on_member_remove."""
 import asyncio
 import logging
 from typing import Awaitable, Callable
@@ -59,7 +58,6 @@ def _ensure_background_task(bot: discord.Client, task_name: str, coro_factory: C
 
 
 def register_events(bot: discord.ext.commands.Bot) -> None:
-    """Регистрирует обработчики on_ready, on_message, on_member_remove."""
 
     @bot.event
     async def on_ready():
@@ -75,7 +73,6 @@ def register_events(bot: discord.ext.commands.Bot) -> None:
         try:
             await init_db()
             startup_log.step("БД подключена", "OK")
-            # Загрузка персистентного состояния склада
             try:
                 from database import warehouse_session_get_all
                 from services.warehouse_session import WarehouseSession

@@ -1,14 +1,9 @@
 # -*- coding: utf-8 -*-
-"""
-Проверка переменных окружения до запуска бота.
-Вызывать после load_dotenv() и до импорта config.
-"""
 import os
 import sys
 
 
 def _has_promotion_channels() -> bool:
-    """Есть ли хотя бы один канал повышений (PROMOTION_CH_* или PROMOTION_CHANNELS)."""
     for key, value in os.environ.items():
         if key.startswith("PROMOTION_CH_") and value and ":" in str(value).strip():
             return True
@@ -19,7 +14,6 @@ def _has_promotion_channels() -> bool:
 
 
 def _has_rank_role_mapping() -> bool:
-    """Есть ли хотя бы один маппинг звание->роль (RANKMAP_* или RANK_ROLE_MAPPING)."""
     for key, value in os.environ.items():
         if key.startswith("RANKMAP_") and value and ":" in str(value).strip():
             return True
@@ -30,11 +24,6 @@ def _has_rank_role_mapping() -> bool:
 
 
 def validate_env() -> None:
-    """
-    Проверяет обязательные переменные окружения.
-    При отсутствии обязательных переменных выводит список и завершает работу (sys.exit(1)).
-    Опциональные переменные только предупреждает в stderr.
-    """
     missing: list[str] = []
     warnings: list[str] = []
 
@@ -61,7 +50,6 @@ def validate_env() -> None:
             "соответствие формулировки повышения и ID роли (формат Текст:role_id)"
         )
 
-    # Опциональные, но важные для базовых фич — только предупреждение
     if not (os.getenv("START_CHANNEL_ID") or "").strip():
         warnings.append("START_CHANNEL_ID не задан — канал заявок «Курсант/Перевод/Гос» может быть недоступен")
     if not (os.getenv("REQUEST_CHANNEL_ID") or "").strip():

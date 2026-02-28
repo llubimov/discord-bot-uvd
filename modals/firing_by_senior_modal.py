@@ -82,7 +82,7 @@ class FiringBySeniorModal(Modal):
                 full_name = str(full_name).split(" | ", 1)[-1].strip()
 
         if not member:
-            # Участника нет на сервере — только аудит от имени нажавшего, с причиной
+
             class _StubMember:
                 def __init__(self, uid: int):
                     self.id = uid

@@ -19,7 +19,7 @@ class ApplyGromPositionManager(BasePositionManager):
 
     @property
     def check_interval(self) -> int:
-        # Шапка перевода почти не меняется — проверяем реже
+
         return 180
 
     async def get_embed(self) -> discord.Embed:

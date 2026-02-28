@@ -32,7 +32,7 @@ def _check_channel(guild: discord.Guild, channel_id: int, title: str):
     if not channel_id:
         return f"❌ {title}: ID не задан"
 
-    # Канал через кэш, если он инициализирован
+
     ch = None
     cache = getattr(state, "channel_cache", None)
     if cache is not None:
@@ -110,7 +110,7 @@ def _truncate_lines(lines: list[str], limit: int = 1000) -> str:
 def _service_status_lines() -> list[str]:
     lines = []
 
-    # Фоновые задачи (если ты уже добавил background_tasks в main.py)
+
     bg_tasks = getattr(state, "background_tasks", None)
     if isinstance(bg_tasks, dict):
         alive = 0
@@ -135,7 +135,7 @@ def _service_status_lines() -> list[str]:
     else:
         lines.append("Фоновые задачи: ⚠️ state.background_tasks не инициализирован")
 
-    # Локи действий
+
     try:
         lc = locks_count()
         if lc >= 0:
@@ -164,7 +164,7 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
     me = guild.me or guild.get_member(bot.user.id)
     bot_top_role = me.top_role if me else None
 
-    # Общая инфа
+
     latency_ms = round(bot.latency * 1000)
     embed.add_field(
         name="Общее",
@@ -179,21 +179,21 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
         inline=False
     )
 
-    # Память / БД
+
     state_counts = _state_counts()
     db_counts = await _db_counts()
 
     embed.add_field(name="Память (state)", value=_format_counts(state_counts), inline=True)
     embed.add_field(name="База (SQLite)", value=_format_counts(db_counts), inline=True)
 
-    # Сервисное состояние
+
     embed.add_field(
         name="Сервисное состояние",
         value=_truncate_lines(_service_status_lines()),
         inline=False
     )
 
-    # Права бота
+
     if me:
         gp = me.guild_permissions
         perms_text = (
@@ -206,7 +206,7 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
         perms_text = "❌ Не удалось получить участника бота"
     embed.add_field(name="Права бота", value=perms_text, inline=True)
 
-    # Проверка ключевых каналов
+
     channel_lines = [
         _check_channel(guild, getattr(Config, "REQUEST_CHANNEL_ID", 0), "Канал заявок"),
         _check_channel(guild, getattr(Config, "FIRING_CHANNEL_ID", 0), "Канал увольнений"),
@@ -221,7 +221,7 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
     ]
     embed.add_field(name="Ключевые каналы", value=_truncate_lines(channel_lines), inline=False)
 
-    # Проверка ключевых ролей
+
     role_lines = [
         _check_role(guild, getattr(Config, "STAFF_ROLE_ID", 0), "Кадровик (общий)", bot_top_role),
         _check_role(guild, getattr(Config, "FIRING_STAFF_ROLE_ID", 0), "Кадровик (увольнение)", bot_top_role),
@@ -230,7 +230,7 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
     ]
     embed.add_field(name="Ключевые роли", value=_truncate_lines(role_lines), inline=False)
 
-    # Сводка по каналам повышений
+
     promo_map = getattr(Config, "PROMOTION_CHANNELS", {}) or {}
     promo_lines = []
     if promo_map:

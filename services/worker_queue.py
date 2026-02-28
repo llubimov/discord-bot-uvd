@@ -1,7 +1,3 @@
-"""
-Очередь задач для тяжёлых операций (БД и т.п.).
-Поддерживает как синхронные (to_thread), так и асинхронные (await) функции.
-"""
 import asyncio
 import inspect
 import logging
@@ -34,7 +30,6 @@ class WorkerQueue:
         *args: Any,
         **kwargs: Any,
     ) -> None:
-        """Поставить задачу в очередь без ожидания результата. fn может быть sync, async или корутиной."""
         try:
             self._queue.put_nowait((fn, args, kwargs, None))
         except asyncio.QueueFull:
@@ -77,7 +72,6 @@ class WorkerQueue:
         logger.info("Воркер очереди задач остановлен")
 
 
-# Глобальный экземпляр, запускается из main
 worker: WorkerQueue | None = None
 
 

@@ -5,12 +5,10 @@ from data.warehouse_items import WAREHOUSE_ITEMS
 
 logger = logging.getLogger(__name__)
 
-# Ключ сессии может быть как user_id (int), так и строковый ключ для спец-сценариев
 user_sessions: Dict[Hashable, Dict[str, Any]] = {}
 
 
 def _normalize_key(session_key: Hashable) -> Hashable | None:
-    """Для чтения: если есть запись по key или str(key), возвращает подходящий ключ."""
     if session_key in user_sessions:
         return session_key
     if str(session_key) in user_sessions:
@@ -21,7 +19,6 @@ def _normalize_key(session_key: Hashable) -> Hashable | None:
 class WarehouseSession:
     @staticmethod
     def load_sessions_into_memory(sessions_dict: Dict[str, Dict[str, Any]]) -> None:
-        """Заполняет user_sessions из словаря, полученного из БД (session_key_str -> {items, created_at})."""
         user_sessions.clear()
         for key, data in sessions_dict.items():
             user_sessions[key] = {

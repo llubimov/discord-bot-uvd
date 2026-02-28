@@ -15,14 +15,14 @@ def update_embed_status(embed, new_status: str, color=None):
             embed.set_field_at(i, name=FieldNames.STATUS, value=new_status, inline=True)
             return embed
     
-    # Проверяем лимит перед добавлением нового поля
+
     if len(embed.fields) >= max_fields:
-        # Если лимит достигнут, ищем поле для замены
+
         for i, field in enumerate(embed.fields):
             if (field.name or "").strip().lower() not in [FieldNames.NAME.lower(), FieldNames.SURNAME.lower(), FieldNames.STATIC_ID.lower()]:
                 embed.set_field_at(i, name=FieldNames.STATUS, value=new_status, inline=True)
                 return embed
-        # Если ничего не нашли - логируем ошибку
+
         logger = logging.getLogger(__name__)
         logger.error(f"Не удалось добавить статус: достигнут лимит полей ({max_fields})")
         return embed

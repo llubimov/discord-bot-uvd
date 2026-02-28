@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 class AdminTransferModal(Modal):
     def __init__(self, from_dept: str):
-        # from_dept: grom | osb | orls
+
         titles = {"grom": "ГРОМ", "osb": "ОСБ", "orls": "ОРЛС"}
         label = titles.get((from_dept or "").strip().lower(), from_dept)
         super().__init__(title=f"Перевод сотрудника из {label} в ППС"[:45])
@@ -67,7 +67,7 @@ class AdminTransferModal(Modal):
                 await interaction.followup.send("❌ Пользователь с таким ID не найден на сервере.", ephemeral=True)
                 return
 
-            # Проверяем, что пользователь действительно состоит в исходном отделе
+
             check_dept, check_rank = get_dept_and_rank_roles(guild, self.from_dept)
             has_dept_role = any(r in member.roles for r in (check_dept + check_rank) if r)
             if not has_dept_role:
@@ -75,12 +75,12 @@ class AdminTransferModal(Modal):
                 await interaction.followup.send(f"❌ Указанный сотрудник не состоит в {label}.", ephemeral=True)
                 return
 
-            # Снимаем все роли отделов и их рангов (ГРОМ/ППС/ОРЛС/ОСБ/Академия),
-            # чтобы не оставались старые должности
+
+
             all_dept_roles, all_rank_roles = get_all_dept_and_rank_roles(guild)
             to_remove = [r for r in all_dept_roles + all_rank_roles if r and r in member.roles]
 
-            # Выдаём роль ППС и одну базовую должность (Сотрудник ППС)
+
             add_dept, _ = get_dept_and_rank_roles(guild, "pps")
             base_rank = get_base_rank_role(guild, "pps")
             to_add = [r for r in add_dept if r]
@@ -118,7 +118,7 @@ class AdminTransferModal(Modal):
             embed.add_field(name="Старый отдел", value=from_dept_label, inline=True)
             embed.add_field(name="Новый отдел", value="ППС", inline=True)
             embed.add_field(name="Причина", value=reason[:1024], inline=False)
-            # Один и тот же канал не дублируем (если ADMIN и CADRE_LOG совпадают)
+
             sent_channel_ids = set()
             for ch_id in (channel_admin_id, log_channel_id):
                 if not ch_id or ch_id in sent_channel_ids:

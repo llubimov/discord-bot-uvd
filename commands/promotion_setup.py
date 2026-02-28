@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""Команды и хелперы для сообщений «Подать рапорт» в каналах повышения."""
 import asyncio
 import logging
 import time
@@ -31,7 +30,6 @@ def get_promotion_view(dept: str) -> discord.ui.View:
 
 
 async def move_promotion_setup_to_bottom(bot: discord.Client, channel: discord.TextChannel) -> None:
-    """Переносит зарегистрированные сообщения «подача рапорта» в самый низ канала."""
     if not isinstance(channel, discord.TextChannel):
         return
     if not isinstance(getattr(state, "promotion_setup_messages", None), dict):
@@ -68,7 +66,6 @@ async def move_promotion_setup_to_bottom(bot: discord.Client, channel: discord.T
 
 
 async def promotion_setup_position_check_loop(bot: discord.Client) -> None:
-    """Каждые PROMOTION_SETUP_CHECK_INTERVAL сек проверяет: последнее сообщение в канале — наше; если нет — переносит вниз."""
     interval = getattr(Config, "PROMOTION_SETUP_CHECK_INTERVAL", 90) or 90
     if interval <= 0:
         return
@@ -188,7 +185,6 @@ async def ensure_promotion_messages_on_startup(bot: discord.Client, guild: disco
 
 
 def register_promotion_setup_commands(bot: discord.ext.commands.Bot) -> None:
-    """Регистрирует слэш-команды orls_promotion_setup, osb_promotion_setup, grom_promotion_setup, pps_promotion_setup, promotion_setup_all."""
 
     @bot.tree.command(
         name="orls_promotion_setup",

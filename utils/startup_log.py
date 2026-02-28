@@ -4,7 +4,7 @@ from typing import Optional
 
 logger = logging.getLogger(__name__)
 
-# Ширина баннера (подгон под консоль)
+
 _WIDTH = 52
 
 

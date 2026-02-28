@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""Рапорты на повышение ППС: модалка, сборщик ссылок, черновики, воркер."""
 
 import re
 import discord
@@ -20,7 +19,6 @@ from utils.promotion_helpers import parse_thanks_lines, send_long, required_coun
 
 logger = logging.getLogger(__name__)
 
-# Баллы: 1–9 общие, 10–17 только ППС, 18–21 инструкторы ППС
 PPS_POINTS_MAP = {
     1: 35,   # Участие в поставке
     2: 35,   # Участие в ГМП
@@ -155,7 +153,6 @@ PPS_POINTS_FIELDS = [
 
 
 def _sort_int_like(keys):
-    """Сортировка ключей, которые могут быть int или str (например из JSON)."""
     return sorted(keys, key=lambda k: int(k) if str(k).isdigit() else -1)
 
 

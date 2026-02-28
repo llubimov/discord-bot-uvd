@@ -62,7 +62,7 @@ class WarehouseEditModal(Modal):
         self.editing_request_message_id = editing_request_message_id
         self.mode = mode if mode in ("request", "issue") else "request"
 
-        # fallback-данные для старого вызова
+
         self.fallback_category = category
         self.fallback_item_name = item_name
         self.fallback_quantity = int(current_quantity or 1)

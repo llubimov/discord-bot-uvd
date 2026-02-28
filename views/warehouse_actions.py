@@ -15,7 +15,7 @@ from modals.warehouse_edit import WarehouseEditModal
 
 logger = logging.getLogger(__name__)
 
-# Формат даты/времени в футере заявки (при смене — обновить и regex CREATED_PATTERN ниже)
+
 WAREHOUSE_FOOTER_DATETIME_FMT = "%d.%m.%Y %H:%M"
 CREATED_PATTERN = re.compile(r"Создано:\s*(\d{2}\.\d{2}\.\d{4}\s+\d{1,2}:\d{2})")
 
@@ -100,7 +100,7 @@ class WarehouseActionView(View):
         self.editing_request_message_id = editing_request_message_id
         self.mode = mode if mode in ("request", "issue") else "request"
 
-        # При редактировании чужой заявки сотрудником (режим issue) скрываем кнопки добавления.
+
         if self.mode == "issue":
             add_callbacks = (
                 self.add_more_button,
@@ -487,7 +487,7 @@ class WarehouseActionView(View):
 
         embed.add_field(name="Статус", value="🟡 В очереди", inline=False)
 
-        # Канал склада через кэш, если он инициализирован
+
         channel = None
         try:
             import state as _state_for_channel  # локальный импорт, чтобы не ломать существующие импорты
@@ -743,7 +743,7 @@ class WarehouseActionView(View):
 
         if self.editing_request_message_id:
             text = "❌ Редактирование отменено. Исходная заявка не изменена."
-            # Возвращаем статус заявки в канале на «В очереди»
+
             if interaction.channel:
                 try:
                     msg = await interaction.channel.fetch_message(self.editing_request_message_id)

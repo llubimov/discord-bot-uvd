@@ -80,8 +80,8 @@ class QuantityModal(Modal):
                 await interaction.response.send_message(error_msg, ephemeral=True)
                 return
 
-            # Успешное добавление не засоряет всплывающими сообщениями
-            # Просто подтверждаем действие без текста
+
+
             await interaction.response.defer(ephemeral=True)
 
         except ValueError:

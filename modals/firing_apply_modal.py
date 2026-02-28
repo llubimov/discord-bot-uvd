@@ -42,7 +42,7 @@ def _build_firing_embed(
     date_str = created_at.strftime("%d.%m.%Y")
     time_str = created_at.strftime("%H:%M")
     rank_genitive = decline_rank_genitive(rank)
-    # Упоминание подавшего рапорт (кликабельное @ник), а не сырой id
+
     officer_display = mention if mention else f"<@!{discord_id}>"
 
     body = (
@@ -121,7 +121,7 @@ class FiringApplyModal(Modal):
             return
 
         raw_name = self.full_name_input.value.strip()
-        # Имя и фамилия через пробел (одно поле)
+
         parts = raw_name.split(None, 1)
         if len(parts) >= 2:
             ok1, name = Validators.validate_name(parts[0])
@@ -183,7 +183,7 @@ class FiringApplyModal(Modal):
         role_mention = f"<@&{Config.FIRING_STAFF_ROLE_ID}>" if getattr(Config, "FIRING_STAFF_ROLE_ID", 0) else ""
         view = FiringView(user_id=discord_id)
 
-        # Канал увольнений через кэш, если он инициализирован
+
         channel = None
         try:
             import state as _state_for_channel  # локальный импорт, чтобы избежать циклов
@@ -226,7 +226,7 @@ class FiringApplyModal(Modal):
 async def post_auto_firing_report(member: discord.Member) -> bool:
     if not member or not member.guild:
         return False
-    # Канал увольнений через кэш, если он инициализирован
+
     channel = None
     try:
         import state as _state_for_channel  # локальный импорт, чтобы избежать циклов

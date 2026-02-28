@@ -72,7 +72,7 @@ class _Step2ContinueView(View):
             return
         await interaction.response.send_modal(modal)
 
-# Цвета по ТЗ
+
 COLOR_GROM = discord.Color.blue()
 COLOR_PPS = discord.Color.green()
 COLOR_OSB = discord.Color.red()
@@ -115,7 +115,7 @@ def _embed_title(target_dept: str, source_dept: str, from_academy: bool) -> str:
     return f"📬 ЗАЯВКА В {t.upper()} (из {s})"
 
 
-# Русские подписи полей в embed заявки (вместо Name, Surname, Rank и т.д.)
+
 _EMBED_FIELD_LABELS = {
     "name": "Имя",
     "surname": "Фамилия",
@@ -142,7 +142,7 @@ def _get_apply_channel_id(target_dept: str) -> int:
     return int(mapping.get((target_dept or "").strip().lower(), 0) or 0)
 
 
-# Возраст в заявках в подразделения: только цифры, от DEPT_APPLY_AGE_MIN до DEPT_APPLY_AGE_MAX (из Config)
+
 def _validate_apply_fields(name: str, surname: str, rank: str, age: str, from_academy: bool) -> tuple[bool, str | None, dict]:
     ok, res = Validators.validate_name(name)
     if not ok:
@@ -200,7 +200,7 @@ async def _post_application(
     embed = _build_embed(target_dept, form_data, user_id, from_academy, source_dept)
 
     if from_academy and target_dept == "pps":
-        # Автодобро ППС из Академии: снять роли Академии, выдать роли ППС
+
         guild = channel.guild
         member = guild.get_member(user_id) or await guild.fetch_member(user_id)
         if member:
@@ -238,7 +238,7 @@ async def _post_application(
     )
     msg = await safe_send(channel, content=content, embed=embed, view=view)
     if msg:
-        # Обновить message_id во view для обработчиков
+
         view.message_id = msg.id
         payload = {
             "user_id": user_id,
@@ -255,7 +255,7 @@ async def _post_application(
     return msg
 
 
-# ---- ГРОМ: 7 полей, два модала ----
+
 
 class GromApplyModalStep1(Modal):
     def __init__(self, target_dept: str, source_dept: str, channel_id: int, from_academy: bool = False, member: discord.Member | None = None):
@@ -362,7 +362,7 @@ class GromApplyModalStep2(Modal):
                 await interaction.response.send_message(ErrorMessages.GENERIC, ephemeral=True)
 
 
-# ---- ППС: 5 полей, один модал ----
+
 
 class PpsApplyModal(Modal):
     def __init__(self, target_dept: str, source_dept: str, channel_id: int, from_academy: bool = False, member: discord.Member | None = None):
@@ -429,7 +429,7 @@ class PpsApplyModal(Modal):
                 await interaction.response.send_message(ErrorMessages.GENERIC, ephemeral=True)
 
 
-# ---- ОСБ: 6 полей, два модала ----
+
 
 class OsbApplyModalStep1(Modal):
     def __init__(self, target_dept: str, source_dept: str, channel_id: int, from_academy: bool = False, member: discord.Member | None = None):
@@ -524,7 +524,7 @@ class OsbApplyModalStep2(Modal):
                 await interaction.response.send_message(ErrorMessages.GENERIC, ephemeral=True)
 
 
-# ---- ОРЛС: 7 полей, два модала ----
+
 
 class OrlsApplyModalStep1(Modal):
     def __init__(self, target_dept: str, source_dept: str, channel_id: int, from_academy: bool = False, member: discord.Member | None = None):

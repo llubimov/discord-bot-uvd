@@ -18,7 +18,7 @@ class ApplyChannelView(View):
         super().__init__(timeout=None)
         self.target_dept = (target_dept or "").strip().lower()
         for source_dept, label in buttons:
-            # Уникальный custom_id для персистентных view при перезапуске
+
             cid = f"apply_{self.target_dept}_{source_dept}"
             btn = Button(label=label, style=discord.ButtonStyle.primary, custom_id=cid)
             btn.callback = self._make_callback(source_dept)

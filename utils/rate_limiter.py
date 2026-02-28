@@ -17,7 +17,7 @@ class RateLimiter:
         jitter = random.uniform(0, delay * 0.1)
         return delay + jitter
 
-# Глобальный экземпляр
+
 rate_limiter = RateLimiter()
 
 async def discord_api_call(coro, *args, max_retries=5, **kwargs):

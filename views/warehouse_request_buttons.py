@@ -20,7 +20,6 @@ WAREHOUSE_FIELD_NAMES = {"🔫 оружие", "🛡️ бронежилеты", 
 
 
 def build_edit_cart_embed(session_key, is_staff: bool) -> discord.Embed:
-    """Собирает embed корзины для режима редактирования заявки (тот же вид, что в start_edit_flow)."""
     items = WarehouseSession.get_items(session_key)
     if is_staff:
         edit_desc = "Поправь состав и нажми **ОТПРАВИТЬ** — заявка будет обновлена и сразу выдана."
@@ -206,7 +205,7 @@ class WarehouseRequestView(View):
                         await interaction.followup.send("⚠️ Эта заявка уже обработана.", ephemeral=True)
                         return
 
-                # Обновляем статус
+
                 updated_status = False
                 for i, field in enumerate(embed.fields):
                     if (field.name or "").strip() == "Статус":
@@ -377,7 +376,7 @@ async def start_edit_flow(
             if not interaction.response.is_done():
                 await interaction.response.defer(ephemeral=True)
 
-            # Меняем статус в сообщении заявки на «Редактируется»
+
             status_updated = False
             for i, field in enumerate(embed.fields):
                 if (field.name or "").strip() == "Статус":

@@ -10,7 +10,7 @@ def get_transfer_nickname(target_dept: str, form_data: dict) -> str | None:
     form_data = form_data or {}
     name = (form_data.get("name") or "").strip()
     surname = (form_data.get("surname") or "").strip()
-    # Позывной для ГРОМ — пока имя и фамилия
+
     callsign = f"{name} {surname}".strip() or "Позывной"
     full_name = f"{name} {surname}".strip() or "Имя Фамилия"
 

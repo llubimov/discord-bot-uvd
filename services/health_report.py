@@ -83,7 +83,7 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
             load_all_warehouse_requests(),
         )
 
-        # Каналы через кэш, если он инициализирован
+
         channel_cache = getattr(state, "channel_cache", None)
         if channel_cache is not None:
             firing_channel = channel_cache.get_channel(Config.FIRING_CHANNEL_ID)
@@ -101,7 +101,7 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
             if ch:
                 promo_channels.append(ch)
 
-        # Увольнения
+
         if firing_channel:
             for msg_id in list(firing.keys()):
                 exists = await _validate_message_exists(firing_channel, int(msg_id))
@@ -110,7 +110,7 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
                     if not dry_run:
                         await delete_request("firing_requests", int(msg_id))
 
-        # Склад
+
         if warehouse_channel:
             for msg_id in list(warehouse.keys()):
                 exists = await _validate_message_exists(warehouse_channel, int(msg_id))
@@ -119,7 +119,7 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
                     if not dry_run:
                         await delete_request("warehouse_requests", int(msg_id))
 
-        # Повышения
+
         for msg_id in list(promotion.keys()):
             found = False
             for ch in promo_channels:
@@ -136,7 +136,7 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
                 if not dry_run:
                     await delete_request("promotion_requests", int(msg_id))
 
-        # Заявки на перевод между отделами
+
         apply_channel_ids = [
             getattr(Config, "CHANNEL_APPLY_GROM", 0),
             getattr(Config, "CHANNEL_APPLY_PPS", 0),

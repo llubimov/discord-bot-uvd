@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""Асинхронный доступ к SQLite через aiosqlite."""
 import json
 import logging
 import os
@@ -42,10 +41,6 @@ DB_PATH = _resolve_db_path()
 
 @asynccontextmanager
 async def _get_conn():
-    """
-    Контекстный менеджер соединения с PRAGMA.
-    Каждый вызов открывает новое соединение; не использовать соединение вне контекста.
-    """
     conn = await aiosqlite.connect(DB_PATH)
     try:
         await conn.execute("PRAGMA journal_mode=WAL;")
@@ -555,17 +550,13 @@ async def load_all_department_transfer_requests() -> Dict[int, Dict[str, Any]]:
     return result
 
 
-# --- Склад: сессии и кулдауны (персистентное состояние) ---
-
 def _session_key_to_str(session_key: Any) -> str:
-    """Приводит ключ сессии (int или str) к строке для БД."""
     if isinstance(session_key, str):
         return session_key
     return str(session_key)
 
 
 async def warehouse_session_get(session_key: Any) -> tuple[list, datetime]:
-    """Возвращает (items, created_at) для сессии. Если нет — ([], now)."""
     key = _session_key_to_str(session_key)
     async with _get_conn() as conn:
         cursor = await conn.execute(
@@ -603,7 +594,6 @@ async def warehouse_session_delete(session_key: Any) -> None:
 
 
 async def warehouse_cooldown_get_all() -> Dict[int, datetime]:
-    """Загружает все кулдауны из БД: user_id -> last_issue_at."""
     result = {}
     async with _get_conn() as conn:
         cursor = await conn.execute("SELECT user_id, last_issue_at FROM warehouse_cooldowns")
@@ -632,7 +622,6 @@ async def warehouse_cooldown_clear(user_id: int) -> None:
 
 
 async def warehouse_session_get_all() -> Dict[str, Dict[str, Any]]:
-    """Загружает все сессии склада: session_key_str -> {items: list, created_at: datetime}."""
     result = {}
     async with _get_conn() as conn:
         cursor = await conn.execute("SELECT session_key, items_json, created_at FROM warehouse_sessions")

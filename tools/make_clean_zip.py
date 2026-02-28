@@ -1,16 +1,16 @@
-# tools/make_clean_zip.py
+
 import os, fnmatch, zipfile
 from datetime import datetime
 from pathlib import Path
 
-# Папка проекта (корень репозитория)
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 EXCLUDE_DIRS = {".git", "__pycache__", ".venv", "venv", "build", "dist"}
 EXCLUDE_PATTERNS = ["*.pyc", "*.log", ".env"]
 
 def is_excluded(path: Path) -> bool:
-    # Исключаем служебные каталоги и файлы
+
     if any(part in EXCLUDE_DIRS for part in path.parts):
         return True
     if any(fnmatch.fnmatch(path.name, pat) for pat in EXCLUDE_PATTERNS):

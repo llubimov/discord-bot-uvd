@@ -41,7 +41,7 @@ class ViewRestorer:
         self._restore_start_views()
         await self._load_requests_from_db()
 
-        # Восстановление кнопок по типам заявок — независимые каналы/состояния, можно параллельно
+
         await asyncio.gather(
             self._restore_request_views(),
             self._restore_firing_views(),
@@ -53,35 +53,35 @@ class ViewRestorer:
         logger.info("Восстановление View завершено")
 
     def _restore_start_views(self):
-        # Единый список персистентных View (без привязки к message_id). После рефакторинга проверить полноту.
-        # Типы: старт заявок, склад старт, переводы отделов (grom/pps/osb/orls), академия, админ-перевод,
-        # увольнения (FiringStartView), рапорты повышения (orls/osb/grom/pps).
+
+
+
         self.bot.add_view(StartView())
         self.bot.add_view(WarehouseStartView())
-        # Заявки на перевод между отделами (персистентные view для кнопок в шапке каналов)
+
         self.bot.add_view(ApplyChannelView("grom", [("pps", "「ППС」"), ("orls", "「ОРЛС」"), ("osb", "「ОСБ」")]))
         self.bot.add_view(ApplyChannelView("pps", [("grom", "「ГРОМ」"), ("orls", "「ОРЛС」"), ("osb", "「ОСБ」")]))
         self.bot.add_view(ApplyChannelView("osb", [("pps", "「ППС」"), ("orls", "「ОРЛС」"), ("grom", "「ГРОМ」")]))
         self.bot.add_view(ApplyChannelView("orls", [("pps", "「ППС」"), ("grom", "「ГРОМ」"), ("osb", "「ОСБ」")]))
         self.bot.add_view(AcademyApplyView())
         self.bot.add_view(AdminTransferView())
-        # Канал увольнений: кнопки «Подать заявление» и «Уволить» (старший состав)
+
         self.bot.add_view(FiringStartView())
-        # Рапорты на повышение ОРЛС (селектор повышения)
+
         self.bot.add_view(OrlsPromotionApplyView())
-        # Рапорты на повышение ОСБ
+
         from views.osb_promotion_apply_view import OsbPromotionApplyView
         self.bot.add_view(OsbPromotionApplyView())
-        # Рапорты на повышение ГРОМ (ОСН «Гром»)
+
         from views.grom_promotion_apply_view import GromPromotionApplyView
         self.bot.add_view(GromPromotionApplyView())
-        # Рапорты на повышение ППС
+
         from views.pps_promotion_apply_view import PpsPromotionApplyView
         self.bot.add_view(PpsPromotionApplyView())
         logger.info("Стартовые View восстановлены")
 
     async def _load_requests_from_db(self):
-        # Загружаем каждую таблицу отдельно, чтобы при сбое одной не перезатирать остальной state.
+
         results = {}
         for name, loader in [
             ("active_requests", load_all_requests),

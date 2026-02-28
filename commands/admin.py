@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""Слэш-команды для админов: ping, diag, diag_clean_orphans, clear_firing."""
 import logging
 from datetime import datetime, timedelta
 
@@ -17,7 +16,6 @@ logger = logging.getLogger(__name__)
 
 
 def register_admin_commands(bot: discord.ext.commands.Bot) -> None:
-    """Регистрирует слэш-команды ping, diag, diag_clean_orphans, clear_firing в дереве бота."""
 
     @bot.tree.command(name="ping", description="Задержка бота")
     async def ping_slash(interaction: discord.Interaction):

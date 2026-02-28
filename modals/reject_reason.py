@@ -54,7 +54,7 @@ class RejectReasonModal(Modal, title='Отклонение заявки'):
             embed = add_reject_reason(embed, reason)
             embed.color = RED
 
-            # 🔥 ПОЛНОСТЬЮ УБИРАЕМ КНОПКИ (view=None)
+
             await message.edit(embed=embed, view=None)
 
             dm_warning = None

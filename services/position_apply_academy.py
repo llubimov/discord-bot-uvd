@@ -17,7 +17,7 @@ class AcademyApplyPositionManager(BasePositionManager):
 
     @property
     def check_interval(self) -> int:
-        # Шапка академии важна, но не критично часто — раз в 2 минуты
+
         return 120
 
     async def get_embed(self) -> discord.Embed:

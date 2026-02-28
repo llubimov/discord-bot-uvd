@@ -1,11 +1,6 @@
 # -*- coding: utf-8 -*-
-"""
-Конечный автомат заявок на перевод между отделами.
-Состояния: pending_source | pending_target | approved | rejected.
-"""
 from typing import Any, Dict
 
-# Ключи в payload (как в БД и state.active_department_transfers)
 APPROVED_SOURCE = "approved_source"
 APPROVED_TARGET = "approved_target"
 FROM_ACADEMY = "from_academy"
@@ -17,10 +12,6 @@ STATE_REJECTED = "rejected"
 
 
 def get_state(payload: Dict[str, Any]) -> str:
-    """
-    Определяет текущее состояние заявки по payload.
-    payload: dict с ключами approved_source, approved_target, from_academy.
-    """
     if not payload:
         return STATE_REJECTED
     approved_src = int(payload.get(APPROVED_SOURCE) or 0)
@@ -32,7 +23,6 @@ def get_state(payload: Dict[str, Any]) -> str:
     if approved_src:
         return STATE_PENDING_TARGET
     if from_academy:
-        # Из Академии источник не нужен — сразу ожидание целевого отдела
         return STATE_PENDING_TARGET
     return STATE_PENDING_SOURCE
 
@@ -50,11 +40,6 @@ def apply_transition(
     action: str,
     value: int,
 ) -> Dict[str, Any] | None:
-    """
-    Применяет переход по действию (approve_source, approve_target, reject).
-    value: role_id для approve_*.
-    Возвращает новый payload или None при недопустимом переходе.
-    """
     state = get_state(payload)
     out = dict(payload)
 
@@ -71,7 +56,6 @@ def apply_transition(
         return out
 
     if action == "reject":
-        # Отклонение в любом состоянии (кроме уже approved) переводит в rejected
         if state == STATE_APPROVED:
             return None
         return None  # Запись удаляется из БД — «rejected» не храним в payload

@@ -26,7 +26,7 @@ def _check_channel(guild: discord.Guild, channel_id: int, name: str) -> bool:
         logger.error(_err(f"{name}: ID не задан в config/.env"))
         return False
 
-    # Канал через кэш, если он инициализирован
+
     ch = None
     cache = getattr(state, "channel_cache", None)
     if cache is not None:
@@ -94,7 +94,7 @@ def _check_promotion_channels(guild: discord.Guild):
     for channel_id, role_ids in mapping.items():
         _check_channel(guild, int(channel_id), f"Канал повышений {channel_id}")
 
-        # PROMOTION_CHANNELS хранит список ролей; проверяем каждую
+
         for rid in (role_ids or []):
             _check_role(guild, int(rid), f"Роль кадровика для канала повышений {channel_id}")
 

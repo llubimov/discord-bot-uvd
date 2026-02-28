@@ -27,7 +27,7 @@ class BaseRequestModal(Modal):
         self.request_type = request_type
         name_default, surname_default = _name_surname_defaults(member)
         min_len = getattr(Config, "MIN_NAME_LENGTH", 2)
-        # Discord 400: default (value) не должен быть короче min_length — передаём default только если длина >= min_len
+
         kw_name = {"label": "Имя", "placeholder": "Введите ваше имя", "max_length": Config.MAX_NAME_LENGTH, "min_length": min_len, "required": True}
         if name_default and len(name_default) >= min_len:
             kw_name["default"] = name_default
@@ -106,7 +106,7 @@ class BaseRequestModal(Modal):
             embed = await self.create_embed(result, interaction)
             additional_data = await self.get_additional_data()
             
-            # Импортируем ВНУТРИ метода, чтобы избежать циклического импорта
+
             from views.request_view import RequestView
             
             view = RequestView(

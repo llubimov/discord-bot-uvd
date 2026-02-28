@@ -37,7 +37,7 @@ class FiringView(View):
             await interaction.response.send_message("❌ Команда доступна только на сервере.", ephemeral=True)
             return False
 
-        # Роль кадровика (увольнение) через кэш, если он инициализирован
+
         staff_role = None
         try:
             import state as _state_for_roles  # локальный импорт, чтобы избежать циклов
@@ -73,7 +73,7 @@ class FiringView(View):
         full_name = "Сотрудник"
         reason = "псж"
 
-        # Новый формат: "Я, **Имя Фамилия**, прошу"
+
         m_name = re.search(r"Я,\s*\*\*([^*]+)\*\*,\s*прошу", desc, re.IGNORECASE)
         if m_name:
             full_name = (m_name.group(1) or "").strip() or "Сотрудник"
@@ -116,7 +116,7 @@ class FiringView(View):
 
                 request_data = active_firing_requests.get(interaction.message.id)
 
-                # Fallback для старых рапортов
+
                 if not request_data:
                     request_data = self._rebuild_request_data_from_embed(interaction.message)
                     if request_data:
@@ -134,7 +134,7 @@ class FiringView(View):
                     await interaction.followup.send("⚠️ Этот рапорт уже обработан.", ephemeral=True)
                     return
 
-                # Защита от уже обработанного рапорта (по embed статусу)
+
                 try:
                     for field in interaction.message.embeds[0].fields:
                         fname = (field.name or "").strip()
@@ -155,7 +155,7 @@ class FiringView(View):
                 full_name = request_data.get("full_name", "Сотрудник")
 
                 if not member:
-                    # Сотрудник уже покинул сервер: фиксируем рапорт, без дополнительного сообщения в канал
+
                     new_embed = copy_embed(interaction.message.embeds[0])
                     new_embed = add_officer_field(new_embed, interaction.user.mention)
                     new_embed.color = RED
@@ -165,7 +165,7 @@ class FiringView(View):
                     except Exception as e:
                         logger.warning("Не удалось обновить рапорт (member left): %s", e)
 
-                    # Попытка отправить в кадровый аудит, даже если участник уже не в гильдии
+
                     class _StubMember:
                         def __init__(self, uid: int):
                             self.id = uid
@@ -204,7 +204,7 @@ class FiringView(View):
                     )
                     return
 
-                # Снимаем роли
+
                 roles_to_keep_ids = set(Config.ROLES_TO_KEEP_ON_FIRE)
                 roles_to_remove = []
                 for role in member.roles:
@@ -224,7 +224,7 @@ class FiringView(View):
                         await interaction.followup.send("❌ Ошибка Discord API при снятии ролей.", ephemeral=True)
                         return
 
-                # Выдаём роль уволенного (через кэш, если есть)
+
                 fired_role = None
                 try:
                     import state as _state_for_roles  # локальный импорт, чтобы избежать циклов
@@ -246,7 +246,7 @@ class FiringView(View):
                         await interaction.followup.send("❌ Ошибка Discord API при выдаче роли.", ephemeral=True)
                         return
 
-                # Меняем ник: убираем префикс отдела/курсанта из full_name (мог прийти «ППС | Имя Фамилия»), ставим только «Уволен | Имя Фамилия»
+
                 name_for_nick = (full_name or "").strip()
                 if " | " in name_for_nick:
                     name_for_nick = name_for_nick.split(" | ", 1)[-1].strip()
@@ -285,7 +285,7 @@ class FiringView(View):
                 except Exception as e:
                     logger.warning("Ошибка аудита увольнения (user=%s): %s", member.id, e, exc_info=True)
 
-                # ЛС пользователю
+
                 dm_warning = None
                 try:
                     embed = discord.Embed(
@@ -304,7 +304,7 @@ class FiringView(View):
                     logger.warning("HTTP ошибка при ЛС об увольнении пользователю %s: %s", member.id, e)
                     dm_warning = f"⚠️ Не удалось отправить уведомление пользователю {member.mention}"
 
-                # Обновляем сообщение рапорта
+
                 message = interaction.message
                 old_embed = message.embeds[0]
                 new_embed = copy_embed(old_embed)
@@ -325,9 +325,9 @@ class FiringView(View):
                     await interaction.followup.send("❌ Ошибка Discord API при обновлении рапорта.", ephemeral=True)
                     return
 
-                # Сообщение в канал не отправляем — рапорт уже обновлён, лишняя запись не нужна
 
-                # Чистим state + БД
+
+
                 active_firing_requests.pop(interaction.message.id, None)
                 try:
                     await delete_request("firing_requests", interaction.message.id)

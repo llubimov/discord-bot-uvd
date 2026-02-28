@@ -44,41 +44,41 @@ class CleanupManager:
         try:
             cutoff = datetime.now() - timedelta(days=Config.REQUEST_EXPIRY_DAYS)
 
-            # Память: заявки, увольнения, повышения, склад, переводы отделов
+
             self._cleanup_store_by_date(getattr(state, "active_requests", {}), "заявки", cutoff)
             self._cleanup_store_by_date(getattr(state, "active_firing_requests", {}), "увольнения", cutoff)
             self._cleanup_store_by_date(getattr(state, "active_promotion_requests", {}), "повышения", cutoff)
             self._cleanup_store_by_date(getattr(state, "warehouse_requests", {}), "склад", cutoff)
             self._cleanup_store_by_date(getattr(state, "active_department_transfers", {}), "переводы отделов", cutoff)
 
-            # БД: все таблицы
+
             await cleanup_old_requests_db(Config.REQUEST_EXPIRY_DAYS)
 
-            # Черновики рапортов ОРЛС
+
             orls_days = getattr(Config, "ORLS_DRAFT_EXPIRY_DAYS", 14)
             orls_deleted = await cleanup_old_orls_drafts(orls_days)
             if orls_deleted:
                 logger.info("🧹 Удалено черновиков ОРЛС (старше %s дней): %s", orls_days, orls_deleted)
 
-            # Черновики рапортов ОСБ
+
             osb_days = getattr(Config, "OSB_DRAFT_EXPIRY_DAYS", 14)
             osb_deleted = await cleanup_old_osb_drafts(osb_days)
             if osb_deleted:
                 logger.info("🧹 Удалено черновиков ОСБ (старше %s дней): %s", osb_days, osb_deleted)
 
-            # Черновики рапортов ГРОМ
+
             grom_days = getattr(Config, "GROM_DRAFT_EXPIRY_DAYS", 14)
             grom_deleted = await cleanup_old_grom_drafts(grom_days)
             if grom_deleted:
                 logger.info("🧹 Удалено черновиков ГРОМ (старше %s дней): %s", grom_days, grom_deleted)
 
-            # Черновики рапортов ППС
+
             pps_days = getattr(Config, "PPS_DRAFT_EXPIRY_DAYS", 14)
             pps_deleted = await cleanup_old_pps_drafts(pps_days)
             if pps_deleted:
                 logger.info("🧹 Удалено черновиков ППС (старше %s дней): %s", pps_days, pps_deleted)
 
-            # Просроченные сессии корзины склада (редактирование/выдача)
+
             try:
                 from services.warehouse_session import WarehouseSession
                 purged = WarehouseSession.purge_expired(max_age_hours=24)

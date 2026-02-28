@@ -195,7 +195,7 @@ class EditRequestModal(Modal):
 
             new_embed = await self.create_updated_embed(result, message.embeds[0])
 
-            # Обновляем данные в памяти
+
             existing = active_requests.get(self.message_id, {}).copy()
             if not existing:
                 existing = dict(self.current_data)
@@ -212,7 +212,7 @@ class EditRequestModal(Modal):
 
             active_requests[self.message_id] = existing
 
-            # Сохраняем изменения в БД
+
             await save_request("requests", self.message_id, existing)
 
             await message.edit(embed=new_embed)

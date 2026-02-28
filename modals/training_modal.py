@@ -52,7 +52,7 @@ class ExamModal(Modal):
             color=0xFFD700
         )
         
-        # Отправляем в ЛС с кнопкой
+
         await interaction.user.send(
             embed=embed,
             view=ExamView()

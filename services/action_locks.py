@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 
 logger = logging.getLogger(__name__)
 
-# message_id -> asyncio.Lock
+
 _locks: dict[int, asyncio.Lock] = {}
 
 
@@ -21,8 +21,8 @@ def _cleanup_lock(message_id: int, lock: asyncio.Lock) -> None:
     msg_id = int(message_id)
     current = _locks.get(msg_id)
 
-    # Важно: проверяем identity, чтобы не удалить новый лок,
-    # если он вдруг был создан повторно позже.
+
+
     if current is lock and not lock.locked():
         _locks.pop(msg_id, None)
         logger.debug("🧹 Лок удалён из кеша: message_id=%s", msg_id)

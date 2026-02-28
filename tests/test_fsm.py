@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
-"""Тесты конечных автоматов заявок (department transfer, firing, promotion)."""
 import importlib.util
 import sys
 from pathlib import Path
 
-# Загружаем FSM-модули напрямую, чтобы не тянуть services.__init__ (config/dotenv)
 _project_root = Path(__file__).resolve().parent.parent
 _spec_dt = importlib.util.spec_from_file_location(
     "department_transfer_fsm",
@@ -41,12 +39,8 @@ promotion_get_state = _promotion_fsm.get_state
 promotion_can_approve = _promotion_fsm.can_approve
 
 
-# --- department_transfer_fsm ---
-
-
 def test_department_transfer_get_state_empty():
     assert get_state(None) == STATE_REJECTED
-    # Пустой dict: «if not payload» в get_state даёт rejected
     assert get_state({}) == STATE_REJECTED
 
 
@@ -105,9 +99,6 @@ def test_department_transfer_apply_approve_target_invalid():
     assert apply_transition(payload, "approve_target", 200) is None
 
 
-# --- firing_fsm ---
-
-
 def test_firing_get_state():
     assert firing_get_state({"discord_id": 1}) == "pending"
     assert firing_get_state(None) == "rejected"
@@ -118,9 +109,6 @@ def test_firing_can_approve():
     assert firing_can_approve({"discord_id": 1}) is True
     assert firing_can_approve(None) is False
     assert firing_can_approve({}) is False
-
-
-# --- promotion_fsm ---
 
 
 def test_promotion_get_state():

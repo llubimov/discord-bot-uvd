@@ -61,7 +61,7 @@ class AdminTransferPositionManager(BasePositionManager):
 
     @property
     def check_interval(self) -> int:
-        # Сообщение админ‑переводов почти статично
+
         return 120
 
     async def get_embed(self) -> discord.Embed:

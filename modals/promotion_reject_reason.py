@@ -13,7 +13,7 @@ class PromotionRejectReasonModal(BaseRejectModal):
         return "отклонение рапорта на повышение"
 
     async def get_staff_role_id(self, interaction):
-        # Для обратной совместимости: возвращаем первую роль из списка как «основную».
+
         role_ids = list(Config.PROMOTION_CHANNELS.get(interaction.channel.id, []) or [])
         return int(role_ids[0]) if role_ids else 0
 

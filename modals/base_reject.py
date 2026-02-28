@@ -64,7 +64,7 @@ class BaseRejectModal(Modal):
     async def get_view_instance(self, interaction: discord.Interaction, request_data: dict):
         view_class = self.get_view_class()
 
-        # Создаем экземпляр view с нужными параметрами
+
         if self.get_table_name() == "requests":
             from views.request_view import RequestView
             from enums import RequestType
@@ -104,7 +104,7 @@ class BaseRejectModal(Modal):
         else:
             view = view_class()
 
-        # Отключаем все кнопки
+
         for item in view.children:
             item.disabled = True
 
@@ -113,7 +113,7 @@ class BaseRejectModal(Modal):
     async def on_submit(self, interaction: discord.Interaction):
         try:
             async with action_lock(self.message_id, f"отклонение {self.get_item_name()}"):
-                # 1) Проверка прав
+
                 allowed_role_ids = await self.get_allowed_role_ids(interaction)
                 guild = interaction.guild
                 member_roles = set(guild.get_member(interaction.user.id).roles) if guild else set()
@@ -130,13 +130,13 @@ class BaseRejectModal(Modal):
                     await interaction.response.send_message(ErrorMessages.NO_PERMISSION, ephemeral=True)
                     return
 
-                # 2) Валидация причины
+
                 valid, reason = Validators.validate_reason(self.reason.value)
                 if not valid:
                     await interaction.response.send_message(f"❌ {reason}", ephemeral=True)
                     return
 
-                # 3) Проверка существования заявки (+ fallback восстановление)
+
                 request_data = await self.get_request_data(self.message_id)
                 if not request_data:
                     restored = False
@@ -161,7 +161,7 @@ class BaseRejectModal(Modal):
                     )
                     return
 
-                # 4) Получаем сообщение и обновляем embed
+
                 try:
                     message = await interaction.channel.fetch_message(self.message_id)
                 except discord.NotFound:
@@ -197,7 +197,7 @@ class BaseRejectModal(Modal):
                 new_embed = add_reject_reason(new_embed, reason)
                 new_embed.color = discord.Color.light_gray()
 
-                # 5) Получаем view с отключенными кнопками
+
                 view = await self.get_view_instance(interaction, request_data)
 
                 try:
@@ -219,13 +219,13 @@ class BaseRejectModal(Modal):
                     await interaction.response.send_message("❌ Ошибка Discord API при обновлении сообщения.", ephemeral=True)
                     return
 
-                # 6) Уведомление пользователю (если получилось)
+
                 dm_warning = None
                 member = interaction.guild.get_member(self.user_id) if interaction.guild else None
                 if member:
                     try:
                         item_name = self.get_item_name()
-                        # Рапорт — мужской род (ваш/был отклонён), заявка — женский (ваша/была отклонена)
+
                         if "рапорт" in item_name.lower():
                             dm_desc = f"**{interaction.guild.name}**\n\nВаш {item_name} был отклонён."
                         else:
@@ -253,13 +253,13 @@ class BaseRejectModal(Modal):
                         logger.warning("HTTP ошибка DM пользователю %s: %s", member.id, e)
                         dm_warning = f"⚠️ не удалось отправить уведомление пользователю {member.mention}"
 
-                # 7) Удаление из state и БД
+
                 state_dict = self.get_state_dict()
                 if self.message_id in state_dict:
                     del state_dict[self.message_id]
                 await delete_request(self.get_table_name(), self.message_id)
 
-                # 8) Ответ
+
                 _item = self.get_item_name()
                 _end = "отклонён. Причина:" if "рапорт" in _item.lower() else "отклонена. Причина:"
                 await interaction.response.send_message(

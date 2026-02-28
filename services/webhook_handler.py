@@ -42,12 +42,12 @@ class WebhookHandler:
             embed = message.embeds[0]
             title = (embed.title or "").strip()
 
-            # Увольнение
+
             if title == "РАПОРТ ОБ УВОЛЬНЕНИИ":
                 await self.process_firing(message, embed)
                 return
 
-            # Повышение (ищем характерный формат поля)
+
             for field in (embed.fields or []):
                 field_name = (field.name or "").strip()
                 if "👤" in field_name and "|" in field_name:
@@ -112,7 +112,7 @@ class WebhookHandler:
                 firing_request.to_dict()
             )
 
-            # Удаляем исходное webhook-сообщение
+
             try:
                 await message.delete()
             except discord.NotFound:
@@ -167,7 +167,7 @@ class WebhookHandler:
                 promo_request.to_dict()
             )
 
-            # Обновляем ID сообщения в view (нужно для дальнейших действий)
+
             view.message_id = bot_msg.id
             try:
                 await bot_msg.edit(view=view)
@@ -178,7 +178,7 @@ class WebhookHandler:
             except discord.HTTPException as e:
                 logger.warning("HTTP ошибка при обновлении view у повышения (msg_id=%s): %s", bot_msg.id, e)
 
-            # Удаляем исходное webhook-сообщение
+
             try:
                 await message.delete()
             except discord.NotFound:
@@ -208,7 +208,7 @@ class WebhookHandler:
             logger.error("Нет описания в embed увольнения")
             return None
 
-        # 1) Ищем ID пользователя
+
         discord_id = None
         match = self.firing_patterns["user_id"].search(description)
         if match:
@@ -222,14 +222,14 @@ class WebhookHandler:
             logger.error("Не найден ID пользователя в рапорте на увольнение")
             return None
 
-        # 2) Звание (из строки «от ЗВАНИЕ <@id>»)
+
         rank = "—"
         match = self.firing_patterns.get("rank")
         if match:
             m_rank = match.search(description)
             if m_rank:
                 rank = (m_rank.group(1) or "").strip() or "—"
-        # 3) Имя
+
         full_name = "Сотрудник"
         match = self.firing_patterns["full_name"].search(description)
         if match:
@@ -245,13 +245,13 @@ class WebhookHandler:
                 else:
                     logger.warning("⚠️ Имя не найдено в увольнении, используем 'Сотрудник'")
 
-        # 3) Причина
+
         reason = "псж"
         match = self.firing_patterns["reason"].search(description)
         if match:
             reason = (match.group(1) or "").strip() or "псж"
 
-        # 4) Опция восстановления
+
         recovery_option = "без возможности восстановления"
         match = self.firing_patterns["recovery"].search(description)
         if match:
@@ -281,7 +281,7 @@ class WebhookHandler:
 
         fields = list(embed.fields or [])
 
-        # 1) Ищем ID в полях
+
         for field in fields:
             field_value = (field.value or "").strip()
             if not field_value:
@@ -296,7 +296,7 @@ class WebhookHandler:
                     logger.error("Некорректный Discord ID в поле повышения: %r", match.group(1))
                     return None
 
-        # 2) Если не нашли — ищем в описании
+
         if not discord_id and embed.description:
             match = self.promotion_patterns["user_id_desc"].search(embed.description)
             if match:
@@ -310,7 +310,7 @@ class WebhookHandler:
             logger.error("Не найден ID пользователя в рапорте на повышение")
             return None
 
-        # 3) Ищем звание и имя в полях с 👤
+
         for field in fields:
             field_name = (field.name or "").strip()
             if not field_name or "👤" not in field_name:

@@ -1,9 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Базовые сценарии склада (WarehouseSession) без Discord."""
 import pytest
 from datetime import datetime
 
-# Минимальный конфиг предметов для теста
 WAREHOUSE_ITEMS_MOCK = {
     "weapons": {
         "items": {"pistol": 1},
@@ -19,7 +17,6 @@ def warehouse_items_mock(monkeypatch):
 
 
 def test_warehouse_session_get_session_creates_new(warehouse_items_mock):
-    """get_session для нового ключа создаёт сессию с пустой корзиной."""
     from services.warehouse_session import WarehouseSession, user_sessions
     user_sessions.clear()
     session = WarehouseSession.get_session(99999)
@@ -29,7 +26,6 @@ def test_warehouse_session_get_session_creates_new(warehouse_items_mock):
 
 
 def test_warehouse_session_add_item_appends(warehouse_items_mock):
-    """add_item добавляет предмет в корзину и возвращает (True, '')."""
     from services.warehouse_session import WarehouseSession, user_sessions
     user_sessions.clear()
     key = 88888

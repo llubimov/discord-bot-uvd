@@ -18,7 +18,6 @@ from utils.promotion_helpers import parse_thanks_lines, send_long, required_coun
 
 logger = logging.getLogger(__name__)
 
-# Баллы за один пункт балловой системы ОРЛС (типы 1–12)
 ORLS_POINTS_MAP = {
     1: 60,   # Участие в собеседовании (60/час — за 1 ссылку считаем 60)
     2: 10,   # Проверка рапортов
@@ -193,7 +192,6 @@ def _parse_bonus_links(text: str) -> tuple[list[str], dict[int, list[str]], int]
 
 
 def _sort_int_like(keys):
-    """Сортировка ключей, которые могут быть int или str (например из JSON)."""
     return sorted(keys, key=lambda k: int(k) if str(k).isdigit() else -1)
 
 
@@ -421,7 +419,6 @@ class OrlsThanksModal(discord.ui.Modal, title="Благодарности и п�
 
 
 async def _do_submit_report(draft: dict, interaction: discord.Interaction) -> None:
-    """Отправка рапорта и создание ветки."""
     ch = None
     if interaction.guild:
         ch_id = draft.get("channel_id")
@@ -528,7 +525,7 @@ async def _do_submit_report(draft: dict, interaction: discord.Interaction) -> No
             total_bonus += ORLS_POINTS_MAP.get(int(t) if str(t).isdigit() else t, 0) * len(urls)
         total_bonus += sum(p for p, u in thanks_links)
         if bonus_links:
-            # Ветка: по каждому типу — название и список ссылок (как в ОСБ/ГРОМ/ППС)
+
             body_parts = []
             for t in _sort_int_like(bonus_links.keys()):
                 urls = bonus_links[t]
@@ -649,7 +646,6 @@ def _build_remove_link_options(draft: dict, promotion_key: str, max_options: int
 
 
 class OrlsRemoveLinkView(View):
-    """Одноразовый селект: выбор ссылки для удаления."""
 
     def __init__(self, owner_id: int, options: list):
         super().__init__(timeout=60)
@@ -823,7 +819,6 @@ class OrlsCollectorView(View):
         await interaction.response.send_modal(OrlsLinksModal("Баллы: тип %s" % t, requirement_index=None, bonus_type=t, user_id=interaction.user.id))
 
     async def _cb_bonus_bulk(self, interaction: discord.Interaction):
-        """Одно поле: в каждой строке «номер типа 1-12» и ссылка. Без номера — тип 1."""
         if not interaction.user:
             return
         if interaction.user.id != self.owner_id:
@@ -940,7 +935,6 @@ class OrlsCollectorView(View):
 
 
 class OrlsPromotionModal(discord.ui.Modal, title="Рапорт на повышение ОРЛС"):
-    """Первая модалка: ФИО, Discord ID, паспорт. Подставляются последние данные и ID пользователя."""
 
     def __init__(self, promotion_key: str, user_id: int | None = None):
         super().__init__(timeout=None)

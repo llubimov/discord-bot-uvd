@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""Рапорты на повышение ОСБ (Отдел собственной безопасности): модалка, сборщик ссылок, черновики, воркер."""
 
 import re
 import discord
@@ -20,7 +19,6 @@ from utils.promotion_helpers import parse_thanks_lines, send_long, required_coun
 
 logger = logging.getLogger(__name__)
 
-# Баллы за один пункт балловой системы ОСБ (типы 1–17: общие 1–9, только ОСБ 10–17)
 OSB_POINTS_MAP = {
     1: 25,   # Участие в поставке
     2: 35,   # Участие в ГМП
@@ -147,7 +145,6 @@ OSB_POINTS_FIELDS = [
 
 
 def _sort_int_like(keys):
-    """Сортировка ключей, которые могут быть int или str (например из JSON)."""
     return sorted(keys, key=lambda k: int(k) if str(k).isdigit() else -1)
 
 

@@ -77,8 +77,8 @@ class PromotionView(View):
 
         custom_id = (interaction.data or {}).get("custom_id")
 
-        # Первая роль в списке — «основной кадровик»,
-        # только он может одобрять рапорт (кнопка promotion_accept).
+
+
         main_role_id = int(role_ids[0])
         extra_role_ids = [int(rid) for rid in role_ids[1:]]
 
@@ -96,8 +96,8 @@ class PromotionView(View):
                 return False
             return True
 
-        # Для отклонения (promotion_reject) могут использоваться несколько ролей:
-        # основная + дополнительные из списка.
+
+
         allowed_roles = []
         role_cache = getattr(state, "role_cache", None)
         role_ids_to_fetch = [main_role_id, *extra_role_ids]
@@ -147,7 +147,7 @@ class PromotionView(View):
                 except Exception:
                     pass
 
-            # ожидаемый формат: "👤 <переход ранга> | <ФИО>"
+
             m = re.search(WebhookPatterns.PROMOTION.get("rank_and_name", r"👤\s*(.+?)\s*\|\s*(.+)"), desc, re.IGNORECASE)
             if m:
                 rank_transition = (m.group(1) or "").strip()
@@ -185,7 +185,7 @@ class PromotionView(View):
                     await interaction.followup.send("❌ У рапорта отсутствует embed.", ephemeral=True)
                     return
 
-                # Fallback для старых рапортов
+
                 request_data = active_promotion_requests.get(self.message_id)
                 if not request_data:
                     request_data = self._rebuild_request_data_from_embed(message)
@@ -200,7 +200,7 @@ class PromotionView(View):
                     await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="рапорт"), ephemeral=True)
                     return
 
-                # Синхронизируем self.* (важно для старых view)
+
                 try:
                     self.user_id = int(request_data.get("discord_id", self.user_id))
                 except (TypeError, ValueError):
@@ -212,7 +212,7 @@ class PromotionView(View):
                     await interaction.followup.send("⚠️ Этот рапорт уже обработан или отклонён.", ephemeral=True)
                     return
 
-                # Защита от повторной обработки по статусу embed
+
                 try:
                     for field in message.embeds[0].fields:
                         if (field.name or "").strip() == FieldNames.STATUS:
@@ -244,7 +244,7 @@ class PromotionView(View):
                     await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="пользователь"), ephemeral=True)
                     return
 
-                # Ключевой фикс: ищем роль сначала по rank_transition, потом по new_rank
+
                 rank_transition = ""
                 if request_data:
                     rank_transition = (request_data.get("rank_transition") or "").strip()
@@ -304,7 +304,7 @@ class PromotionView(View):
                     [r.id for r in roles_to_remove]
                 )
 
-                # Снимаем/выдаем роли
+
                 try:
                     if roles_to_remove:
                         await apply_role_changes(member, remove=roles_to_remove)
@@ -317,7 +317,7 @@ class PromotionView(View):
                     await interaction.followup.send("❌ Ошибка Discord API при изменении ролей.", ephemeral=True)
                     return
 
-                # Обновим member после смены ролей
+
                 try:
                     member = await interaction.guild.fetch_member(self.user_id)
                 except Exception:
@@ -339,17 +339,17 @@ class PromotionView(View):
                 except Exception as e:
                     logger.warning("Promotion audit: ошибка user=%s: %s", member.id, e, exc_info=True)
 
-                # После кадрового аудита: при повышении до сержанта выдать роль «прошедший академию»
+
                 role_passed_academy_id = getattr(Config, "ROLE_PASSED_ACADEMY", 0) or 0
                 if not role_passed_academy_id:
                     logger.debug("ROLE_PASSED_ACADEMY не задан в .env — роль «прошедший академию» не выдаётся")
                 if role_passed_academy_id:
                     rank_transition = (request_data or {}).get("rank_transition") or ""
-                    # Переход может быть в rank_transition или в self.new_rank (например из вебхука)
+
                     transition_str = rank_transition or self.new_rank or ""
                     new_rank_canon = (parse_transition_to_new_rank(transition_str) or "").strip().lower()
                     new_rank_norm = _norm_text(self.new_rank)
-                    # Сержант (ровно), не младший и не старший
+
                     is_sergeant = (
                         new_rank_canon in ("сержант", "сержант полиции")
                         or new_rank_norm in ("сержант", "сержант полиции")
@@ -377,7 +377,7 @@ class PromotionView(View):
                             self.new_rank, rank_transition, new_rank_canon, new_rank_norm,
                         )
 
-                # ЛС пользователю
+
                 dm_warning = None
                 try:
                     embed = discord.Embed(
@@ -396,7 +396,7 @@ class PromotionView(View):
                     logger.warning("Promotion DM: HTTP ошибка user=%s: %s", member.id, e)
                     dm_warning = f"⚠️ Не удалось отправить уведомление пользователю {member.mention}"
 
-                # Обновляем сообщение рапорта
+
                 try:
                     message = await interaction.channel.fetch_message(self.message_id)
                 except discord.NotFound:
@@ -431,7 +431,7 @@ class PromotionView(View):
                     await interaction.followup.send("❌ Ошибка Discord API при обновлении рапорта.", ephemeral=True)
                     return
 
-                # Чистим state + БД
+
                 active_promotion_requests.pop(self.message_id, None)
                 try:
                     await delete_request("promotion_requests", self.message_id)

@@ -54,7 +54,7 @@ class FiringPositionManager(BasePositionManager):
 
     @property
     def check_interval(self) -> int:
-        # Шапка увольнений должна быть более стабильной — проверяем раз в минуту
+
         return 60
 
     async def get_embed(self) -> discord.Embed:

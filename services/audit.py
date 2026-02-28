@@ -7,7 +7,7 @@ from config import Config
 
 logger = logging.getLogger(__name__)
 
-# Точные значения для поля звания в Google Forms
+
 _AUDIT_RANK_LABELS = {
     "рядовой": "Рядовой полиции",
     "рядовой полиции": "Рядовой полиции",
@@ -50,7 +50,7 @@ def _clean_rank_text(rank: str) -> str:
 
     text = str(rank).strip()
 
-    # Если пришла строка перехода ("Прапорщик -> Старший прапорщик"), берем правую часть
+
     parts = _ARROW_RE.split(text)
     if len(parts) == 2:
         text = parts[1].strip()
@@ -73,7 +73,7 @@ def _get_rank_value(action: str, rank: str) -> str:
         if mapped:
             return mapped
 
-        # Фоллбек, если словарь не покрыл конкретный вариант
+
         if cleaned in {"уволен", "уволен с чс"}:
             return _AUDIT_RANK_LABELS[cleaned]
 
@@ -87,7 +87,7 @@ def _get_rank_value(action: str, rank: str) -> str:
 
 
 def _build_form_data(interaction, target_member, action, rank_value, reason_link: str) -> dict:
-    # Только поля формы. Без fbzx/partialResponse/pageHistory (они часто ломают отправку)
+
     return {
         Config.AUDIT_FIELD_OFFICER: str(interaction.user.id),
         Config.AUDIT_FIELD_TARGET_ID: str(target_member.id),
@@ -107,7 +107,7 @@ async def _safe_followup_warning(interaction, text: str):
 async def send_to_audit(interaction, target_member, action, rank, reason_link):
     rank_value = _get_rank_value(action, rank)
 
-    # Отправка в форму
+
     if not Config.AUDIT_FORM_URL:
         logger.warning("Аудит: AUDIT_FORM_URL не настроен, отправка в форму пропущена")
         await _safe_followup_warning(

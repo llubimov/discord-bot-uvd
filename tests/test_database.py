@@ -1,5 +1,4 @@
 # -*- coding: utf-8 -*-
-"""Тесты инициализации БД (database.init_db) с aiosqlite."""
 import asyncio
 import os
 import tempfile
@@ -19,8 +18,6 @@ def temp_db_path():
 
 @pytest.mark.asyncio
 async def test_init_db_creates_tables(temp_db_path, monkeypatch):
-    """init_db создаёт файл БД и таблицы."""
-    # Подменяем DB_PATH на временный файл (config уже загружен, подменяем database.DB_PATH)
     import database
     monkeypatch.setattr(database, "DB_PATH", temp_db_path)
 

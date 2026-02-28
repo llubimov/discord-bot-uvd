@@ -58,7 +58,7 @@ class BasePositionManager(ABC):
             logger.debug("Пропуск ensure_position: обновление уже выполняется (канал %s)", self.channel_id)
             return
 
-        # Канал через кэш, если он инициализирован
+
         channel = None
         try:
             import state as _state_for_channel  # локальный импорт, чтобы избежать циклов
@@ -76,12 +76,12 @@ class BasePositionManager(ABC):
         try:
             self.is_updating = True
 
-            # Находим текущее сообщение
+
             current_message = None
             if self.message_id:
                 try:
                     current_message = await channel.fetch_message(int(self.message_id))
-                    # Проверяем что сообщение всё ещё наше
+
                     if not await self.should_keep_message(current_message):
                         logger.info(
                             "Сообщение %s в канале %s больше не подходит под критерий, ищем заново",
@@ -110,13 +110,13 @@ class BasePositionManager(ABC):
                     )
                     self.message_id = None
 
-            # Если не нашли по ID, ищем в истории
+
             if not current_message:
                 current_message = await self.find_our_message(channel)
                 if current_message:
                     self.message_id = current_message.id
 
-            # Находим последнее сообщение в канале
+
             last_message = None
             try:
                 async for msg in channel.history(limit=1):
@@ -129,7 +129,7 @@ class BasePositionManager(ABC):
                 logger.warning("⚠️ HTTP ошибка при получении последнего сообщения в канале %s: %s", self.channel_id, e)
                 return
 
-            # Проверяем нужно ли обновлять
+
             need_update = False
 
             if not current_message:
@@ -143,7 +143,7 @@ class BasePositionManager(ABC):
                 logger.info("Кнопки пропали в канале %s - восстанавливаем", self.channel_id)
 
             if need_update:
-                # Удаляем старое сообщение если есть
+
                 if current_message:
                     try:
                         await current_message.delete()
@@ -156,7 +156,7 @@ class BasePositionManager(ABC):
                         logger.warning("HTTP ошибка при удалении старого сообщения в канале %s: %s", self.channel_id, e)
                         return
 
-                # Создаем новое внизу
+
                 embed = await self.get_embed()
                 view = await self.get_view()
 
@@ -171,7 +171,7 @@ class BasePositionManager(ABC):
 
                 self.message_id = new_message.id
 
-                # Удаляем дубликаты
+
                 await self._remove_duplicates(channel)
 
                 logger.info("🔄 Сообщение обновлено в канале %s (msg_id=%s)", self.channel_id, self.message_id)
@@ -211,10 +211,10 @@ class BasePositionManager(ABC):
     async def start_checking(self):
         await self.bot.wait_until_ready()
 
-        # Первая проверка
+
         await self.ensure_position()
 
-        # Дальше с интервалом
+
         while not self.bot.is_closed():
             try:
                 await asyncio.sleep(self.check_interval)

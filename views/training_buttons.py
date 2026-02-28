@@ -27,7 +27,7 @@ class ExamButton(Button):
             )
             return
 
-        # Получаем целевой канал
+
         channel = guild.get_channel(Config.EXAM_CHANNEL_ID)
         if not channel:
             await interaction.response.send_message(
@@ -36,10 +36,10 @@ class ExamButton(Button):
             )
             return
 
-        # Получаем участника
+
         member = guild.get_member(interaction.user.id)
 
-        # Проверяем, что пользователь в голосовом канале
+
         if not member or not member.voice or not member.voice.channel:
             await interaction.response.send_message(
                 "❌ Вы должны находиться в голосовом канале!\n"
@@ -49,11 +49,11 @@ class ExamButton(Button):
             return
 
         try:
-            # Перемещаем пользователя
+
             await member.move_to(channel)
 
-            # После успешного перемещения убираем кнопку,
-            # чтобы нельзя было нажать повторно
+
+
             try:
                 await interaction.message.edit(view=None)
                 logger.info("Кнопка экзамена удалена после успешного перемещения user_id=%s", interaction.user.id)
@@ -64,7 +64,7 @@ class ExamButton(Button):
             except discord.HTTPException as e:
                 logger.warning("HTTP ошибка при удалении кнопки экзамена (user_id=%s): %s", interaction.user.id, e)
 
-            # Отправляем подтверждение
+
             await interaction.response.send_message(
                 f"✅ Вы перемещены в канал {channel.mention}!",
                 ephemeral=True
@@ -111,7 +111,7 @@ class ExamView(View):
         self.message = message
         self.user_id = user_id
 
-        # На всякий случай отменим предыдущую задачу таймера
+
         if self._destroy_task and not self._destroy_task.done():
             self._destroy_task.cancel()
 

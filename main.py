@@ -15,7 +15,6 @@ from logging.handlers import RotatingFileHandler
 import state
 from config import Config
 
-# ========== ЛОГИРОВАНИЕ ==========
 file_handler = RotatingFileHandler(
     Config.LOG_FILE,
     maxBytes=2 * 1024 * 1024,  # 2 MB
@@ -33,7 +32,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ========== БОТ ==========
 intents = discord.Intents.default()
 intents.message_content = Config.ENABLE_MESSAGE_CONTENT_INTENT
 intents.members = True
@@ -45,7 +43,6 @@ bot = commands.Bot(
 )
 state.bot = bot
 
-# ========== СЕРВИСЫ ==========
 from services.cache import ChannelCache, RoleCache
 from services.cleanup import CleanupManager
 from services.firing_position_manager import FiringPositionManager
@@ -86,7 +83,6 @@ try:
 except Exception as e:
     logger.warning("warehouse_cooldown не загружен: %s", e)
 
-# ========== РЕГИСТРАЦИЯ СОБЫТИЙ И КОМАНД ==========
 from events import register_events
 from commands.admin import register_admin_commands
 from commands.promotion_setup import register_promotion_setup_commands

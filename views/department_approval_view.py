@@ -47,7 +47,7 @@ def _has_any_role(member: discord.Member, role_ids: list[int]) -> bool:
     for rid in role_ids:
         r = None
         if role_cache is not None:
-            # sync helper: используем get_role внутри кэша через guild
+
             r = guild.get_role(rid)
         else:
             r = guild.get_role(rid)
@@ -278,18 +278,18 @@ class DepartmentApprovalView(View):
                     await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="пользователь"), ephemeral=True)
                     return
 
-                # Снять все роли отделов и их рангов (ГРОМ/ППС/ОРЛС/ОСБ/Академия),
-                # затем выдать только роли целевого подразделения
+
+
                 all_dept_roles, all_rank_roles = get_all_dept_and_rank_roles(guild)
                 remove_dept = [r for r in all_dept_roles if r]
                 remove_rank = [r for r in all_rank_roles if r]
 
-                # Выдаём роль отдела и только одну базовую должность (стажёр)
+
                 add_dept, _ = get_dept_and_rank_roles(guild, self.target_dept)
                 base_rank = get_base_rank_role(guild, self.target_dept)
 
                 to_remove = [r for r in remove_dept + remove_rank if r]
-                # При переводе из Академии в подразделение снять роль «прошедший академию»
+
                 if self.from_academy:
                     role_passed_id = getattr(Config, "ROLE_PASSED_ACADEMY", 0) or 0
                     if role_passed_id:
@@ -317,8 +317,8 @@ class DepartmentApprovalView(View):
                 except Exception as e:
                     logger.warning("Не удалось обновить данные участника после смены ролей: %s", e)
                 else:
-                    # Для проверки «старых ролей» игнорируем роли целевого отдела,
-                    # т.к. мы специально их снимаем и тут же выдаём заново.
+
+
                     target_roles_set = set(to_add)
                     still_has_old = [r for r in to_remove if r in member.roles and r not in target_roles_set]
                     missing_new = [r for r in to_add if r not in member.roles]
@@ -342,7 +342,7 @@ class DepartmentApprovalView(View):
                         )
                         verify_failed_msg = "; ".join(msg_parts)
 
-                # Ник по формату отдела
+
                 new_nick = get_transfer_nickname(self.target_dept, self.form_data)
                 if new_nick:
                     try:
@@ -350,7 +350,7 @@ class DepartmentApprovalView(View):
                     except Exception as e:
                         logger.warning("Не удалось сменить ник при переводе: %s", e)
 
-                # Уведомление в ЛС
+
                 try:
                     label = get_approval_label_target(self.target_dept)
                     await member.send(

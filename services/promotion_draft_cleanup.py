@@ -1,5 +1,3 @@
-"""Черновики рапортов на повышение: очистка при переводе/увольнении."""
-
 from __future__ import annotations
 
 from database import delete_orls_draft, delete_osb_draft, delete_grom_draft, delete_pps_draft
@@ -8,7 +6,6 @@ import state
 
 
 def clear_promotion_draft_for_department(user_id: int, dept: str) -> None:
-    """Удаляет черновик по отделу (orls/osb/grom/pps) из state и БД."""
     if not user_id:
         return
     d = (dept or "").strip().lower()
@@ -31,7 +28,6 @@ def clear_promotion_draft_for_department(user_id: int, dept: str) -> None:
 
 
 def clear_promotion_draft_for_user(user_id: int) -> None:
-    """Сносит все черновики повышения по всем отделам (при увольнении)."""
     if not user_id:
         return
     for dept in ("orls", "osb", "grom", "pps"):

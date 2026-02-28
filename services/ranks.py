@@ -174,7 +174,6 @@ def get_member_rank_display(member: Optional[discord.Member]) -> str:
 
 
 def is_promotion_key_allowed_for_member(member: Optional[discord.Member], promotion_key: str) -> bool:
-    """Разрешено ли участнику подать рапорт на данное повышение (строго следующее звание)."""
     if not member or not (promotion_key or "").strip():
         return False
     canon = _canon_transition_key(promotion_key)

@@ -80,7 +80,7 @@ class RequestView(View):
         try:
             async with action_lock(interaction.message.id, "принятие заявки"):
                 roles_to_give = self.request_type.get_roles_to_give()
-                # Роли через кэш, если он инициализирован
+
                 roles = []
                 try:
                     role_cache = getattr(state, "role_cache", None)
@@ -109,7 +109,7 @@ class RequestView(View):
                     message_link
                 )
 
-                # Сообщение в ЛС принятому курсанту
+
                 if self.request_type == RequestType.CADET:
                     from datetime import datetime
                     import random
@@ -170,7 +170,7 @@ class RequestView(View):
                             ephemeral=True
                         )
 
-                # Обновление embed
+
                 embed = copy_embed(interaction.message.embeds[0])
                 embed = update_embed_status(embed, StatusValues.ACCEPTED, GREEN)
                 embed = add_officer_field(embed, interaction.user.mention)

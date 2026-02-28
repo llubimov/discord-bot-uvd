@@ -34,6 +34,7 @@ def _build_firing_embed(
     created_at: datetime,
     *,
     is_auto_report: bool = False,
+    mention: str | None = None,
 ) -> discord.Embed:
     first_name = full_name.split()[0] if full_name.strip() else "Сотрудник"
     title = f"📬 РАПОРТ НА УВОЛЬНЕНИЕ (от {first_name})"
@@ -41,12 +42,14 @@ def _build_firing_embed(
     date_str = created_at.strftime("%d.%m.%Y")
     time_str = created_at.strftime("%H:%M")
     rank_genitive = decline_rank_genitive(rank)
+    # Упоминание подавшего рапорт (кликабельное @ник), а не сырой id
+    officer_display = mention if mention else f"<@!{discord_id}>"
 
     body = (
         "**РАПОРТ ОБ УВОЛЬНЕНИИ**\n"
         "Начальнику УВД по ЦАО ГУ МВД по г. Москва и Московской области\n"
         "Генерал-полковник полиции Визнер С.В.\n\n"
-        f"ОТ {rank_genitive} — id {discord_id}\n\n"
+        f"ОТ {rank_genitive} — {officer_display}\n\n"
         f"Я, **{full_name}**, прошу уволить меня из рядов Управления Внутренних Дел Российской Федерации {recovery_text}.\n\n"
         "🌟 Фото удостоверения:\n"
         f"{photo_link or '—'}\n\n"
@@ -54,7 +57,7 @@ def _build_firing_embed(
     )
 
     embed = discord.Embed(title=title, description=body, color=RED)
-    embed.add_field(name=FieldNames.OFFICER, value=f"<@!{discord_id}>", inline=True)
+    embed.add_field(name=FieldNames.OFFICER, value=officer_display, inline=True)
     embed.add_field(name=FieldNames.STATUS, value="⏳ Ожидает рассмотрения", inline=True)
     if is_auto_report:
         embed.add_field(
@@ -174,6 +177,7 @@ class FiringApplyModal(Modal):
             with_recovery=with_recovery,
             reason=reason,
             created_at=created_at,
+            mention=interaction.user.mention,
         )
 
         role_mention = f"<@&{Config.FIRING_STAFF_ROLE_ID}>" if getattr(Config, "FIRING_STAFF_ROLE_ID", 0) else ""
@@ -247,6 +251,7 @@ async def post_auto_firing_report(member: discord.Member) -> bool:
         reason=Config.FIRING_AUTO_REASON,
         created_at=created_at,
         is_auto_report=True,
+        mention=member.mention,
     )
     role_mention = f"<@&{Config.FIRING_STAFF_ROLE_ID}>" if getattr(Config, "FIRING_STAFF_ROLE_ID", 0) else ""
     view = FiringView(user_id=member.id)

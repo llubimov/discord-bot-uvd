@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt -r requirements-dev.txt
+
+      - name: Set minimal env for lint/tests
+        run: |
+          export DISCORD_BOT_TOKEN=test
+          export GUILD_ID=1
+          export PROMOTION_CH_01=1:2
+          export RANKMAP_01=x:3
+
+      - name: Black
+        run: black --check .
+        continue-on-error: true
+
+      - name: isort
+        run: isort --check-only .
+        continue-on-error: true
+
+      - name: Ruff
+        run: ruff check .
+        continue-on-error: true
+
+      - name: Pytest
+        run: pytest -v
+        env:
+          DISCORD_BOT_TOKEN: test
+          GUILD_ID: "1"
+          PROMOTION_CH_01: "1:2"
+          RANKMAP_01: "x:3"

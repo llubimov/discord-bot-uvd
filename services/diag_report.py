@@ -75,12 +75,12 @@ def _state_counts():
     }
 
 
-def _db_counts():
-    req = load_all_requests()
-    fir = load_all_firing_requests()
-    pro = load_all_promotion_requests()
-    wh = load_all_warehouse_requests()
-    dept = load_all_department_transfer_requests()
+async def _db_counts():
+    req = await load_all_requests()
+    fir = await load_all_firing_requests()
+    pro = await load_all_promotion_requests()
+    wh = await load_all_warehouse_requests()
+    dept = await load_all_department_transfer_requests()
     return {
         "Заявки": len(req),
         "Увольнения": len(fir),
@@ -181,7 +181,7 @@ async def build_diag_embed(bot: discord.Client) -> discord.Embed:
 
     # Память / БД
     state_counts = _state_counts()
-    db_counts = await asyncio.to_thread(_db_counts)
+    db_counts = await _db_counts()
 
     embed.add_field(name="Память (state)", value=_format_counts(state_counts), inline=True)
     embed.add_field(name="База (SQLite)", value=_format_counts(db_counts), inline=True)

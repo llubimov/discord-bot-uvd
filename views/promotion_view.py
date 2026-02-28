@@ -21,6 +21,7 @@ from services.ranks import (
 )
 from database import delete_request
 from constants import StatusValues, FieldNames, WebhookPatterns
+from services.promotion_fsm import can_approve
 
 logger = logging.getLogger(__name__)
 
@@ -195,14 +196,21 @@ class PromotionView(View):
                             self.message_id
                         )
 
-                if request_data:
-                    # Синхронизируем self.* (важно для старых view)
-                    try:
-                        self.user_id = int(request_data.get("discord_id", self.user_id))
-                    except (TypeError, ValueError):
-                        pass
-                    self.full_name = request_data.get("full_name", self.full_name) or "сотрудник"
-                    self.new_rank = request_data.get("new_rank", self.new_rank) or self.new_rank
+                if not request_data:
+                    await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="рапорт"), ephemeral=True)
+                    return
+
+                # Синхронизируем self.* (важно для старых view)
+                try:
+                    self.user_id = int(request_data.get("discord_id", self.user_id))
+                except (TypeError, ValueError):
+                    pass
+                self.full_name = request_data.get("full_name", self.full_name) or "сотрудник"
+                self.new_rank = request_data.get("new_rank", self.new_rank) or self.new_rank
+
+                if not can_approve(request_data):
+                    await interaction.followup.send("⚠️ Этот рапорт уже обработан или отклонён.", ephemeral=True)
+                    return
 
                 # Защита от повторной обработки по статусу embed
                 try:
@@ -426,7 +434,7 @@ class PromotionView(View):
                 # Чистим state + БД
                 active_promotion_requests.pop(self.message_id, None)
                 try:
-                    await asyncio.to_thread(delete_request, "promotion_requests", self.message_id)
+                    await delete_request("promotion_requests", self.message_id)
                 except Exception as e:
                     logger.warning("Не удалось удалить promotion_request %s из БД: %s", self.message_id, e, exc_info=True)
 

@@ -92,7 +92,7 @@ class BaseRequestModal(Modal):
             **additional_data
         }
         active_requests[message.id] = data
-        await asyncio.to_thread(save_request, 'requests', message.id, data)
+        await save_request('requests', message.id, data)
 
     async def on_submit(self, interaction: discord.Interaction):
         try:

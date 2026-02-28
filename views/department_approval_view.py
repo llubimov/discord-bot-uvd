@@ -26,6 +26,12 @@ from services.department_roles import (
 from services.department_nickname import get_transfer_nickname
 from services.action_locks import action_lock
 from services.promotion_draft_cleanup import clear_promotion_draft_for_department
+from services.department_transfer_fsm import (
+    get_state,
+    can_approve_source,
+    can_approve_target,
+    apply_transition,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -179,8 +185,13 @@ class DepartmentApprovalView(View):
         return True
 
     async def _handle_approve_source(self, interaction: discord.Interaction):
-        if self.approved_source:
-            await interaction.response.send_message("⚠️ Уже одобрено.", ephemeral=True)
+        payload = {
+            "approved_source": self.approved_source,
+            "approved_target": self.approved_target,
+            "from_academy": self.from_academy,
+        }
+        if not can_approve_source(payload):
+            await interaction.response.send_message("⚠️ Уже одобрено или недопустимое состояние.", ephemeral=True)
             return
         await interaction.response.defer(ephemeral=True)
         try:
@@ -188,8 +199,12 @@ class DepartmentApprovalView(View):
                 role_ids = get_chief_deputy_role_ids(self.source_dept)
                 who = interaction.user
                 approved_role = next((rid for rid in role_ids if who.guild.get_role(rid) in who.roles), role_ids[0] if role_ids else 0)
-                self.approved_source = approved_role
-                update_department_transfer_approval(self.message_id, approved_source=approved_role)
+                new_payload = apply_transition(payload, "approve_source", approved_role)
+                if not new_payload:
+                    await interaction.followup.send("⚠️ Недопустимый переход.", ephemeral=True)
+                    return
+                self.approved_source = new_payload["approved_source"]
+                await update_department_transfer_approval(self.message_id, approved_source=self.approved_source)
                 active_department_transfers[self.message_id] = {
                     "message_id": self.message_id,
                     "user_id": self.user_id,
@@ -240,8 +255,13 @@ class DepartmentApprovalView(View):
             await interaction.followup.send(ErrorMessages.GENERIC, ephemeral=True)
 
     async def _handle_approve_target(self, interaction: discord.Interaction):
-        if self.approved_target:
-            await interaction.response.send_message("⚠️ Уже одобрено.", ephemeral=True)
+        payload = {
+            "approved_source": self.approved_source,
+            "approved_target": self.approved_target,
+            "from_academy": self.from_academy,
+        }
+        if not can_approve_target(payload):
+            await interaction.response.send_message("⚠️ Уже одобрено или недопустимое состояние.", ephemeral=True)
             return
         if not self.from_academy and not self.approved_source:
             await interaction.response.send_message(
@@ -341,11 +361,21 @@ class DepartmentApprovalView(View):
 
                 approver_role_ids = get_chief_deputy_role_ids(self.target_dept)
                 who = interaction.user
-                self.approved_target = next(
+                approved_role_id = next(
                     (rid for rid in approver_role_ids if guild.get_role(rid) in who.roles),
                     approver_role_ids[0] if approver_role_ids else 1,
                 )
-                update_department_transfer_approval(self.message_id, approved_target=self.approved_target)
+                payload_before = {
+                    "approved_source": self.approved_source,
+                    "approved_target": self.approved_target,
+                    "from_academy": self.from_academy,
+                }
+                new_payload = apply_transition(payload_before, "approve_target", approved_role_id)
+                if not new_payload:
+                    await interaction.followup.send("⚠️ Недопустимый переход.", ephemeral=True)
+                    return
+                self.approved_target = new_payload["approved_target"]
+                await update_department_transfer_approval(self.message_id, approved_target=self.approved_target)
                 try:
                     msg = await interaction.channel.fetch_message(self.message_id)
                     embed = msg.embeds[0] if msg.embeds else None
@@ -366,7 +396,7 @@ class DepartmentApprovalView(View):
                     logger.warning("Не удалось обновить сообщение заявки %s: %s", self.message_id, e)
 
                 active_department_transfers.pop(self.message_id, None)
-                await asyncio.to_thread(delete_department_transfer_request, self.message_id)
+                await delete_department_transfer_request(self.message_id)
 
                 if verify_failed_msg:
                     await interaction.followup.send(

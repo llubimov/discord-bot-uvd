@@ -250,7 +250,7 @@ async def _post_application(
             "approved_target": 0,
             "created_at": datetime.now().isoformat(),
         }
-        await asyncio.to_thread(save_department_transfer_request, msg.id, payload)
+        await save_department_transfer_request(msg.id, payload)
         active_department_transfers[msg.id] = {**payload, "message_id": msg.id}
     return msg
 

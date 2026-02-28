@@ -626,7 +626,7 @@ class WarehouseActionView(View):
             warehouse_cooldown.register_issue(requester_id)
 
             try:
-                await asyncio.to_thread(delete_warehouse_request, int(self.editing_request_message_id))
+                await delete_warehouse_request(int(self.editing_request_message_id))
             except Exception as e:
                 logger.warning(
                     "Склад issue-edit: не удалось удалить запись из БД после выдачи: %s",
@@ -678,7 +678,7 @@ class WarehouseActionView(View):
             request_data['edited_by'] = editor_id
             request_data['replaces_message_id'] = self.editing_request_message_id
 
-        await asyncio.to_thread(save_warehouse_request, sent_message.id, request_data)
+        await save_warehouse_request(sent_message.id, request_data)
 
         view.message_id = sent_message.id
         await sent_message.edit(view=view)
@@ -697,7 +697,7 @@ class WarehouseActionView(View):
                 logger.warning("HTTP ошибка удаления старой заявки %s после пересоздания: %s", old_message_id, e)
 
             try:
-                await asyncio.to_thread(delete_warehouse_request, old_message_id)
+                await delete_warehouse_request(old_message_id)
             except Exception as e:
                 logger.warning("Не удалось удалить старую запись склада %s из БД: %s", old_message_id, e, exc_info=True)
 

@@ -106,8 +106,7 @@ class WebhookHandler:
 
             active_firing_requests[bot_msg.id] = firing_request.to_dict()
 
-            await asyncio.to_thread(
-                save_request,
+            await save_request(
                 "firing_requests",
                 bot_msg.id,
                 firing_request.to_dict()
@@ -162,8 +161,7 @@ class WebhookHandler:
 
             active_promotion_requests[bot_msg.id] = promo_request.to_dict()
 
-            await asyncio.to_thread(
-                save_request,
+            await save_request(
                 "promotion_requests",
                 bot_msg.id,
                 promo_request.to_dict()

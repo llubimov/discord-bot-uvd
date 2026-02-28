@@ -217,7 +217,7 @@ class FiringApplyModal(Modal):
                 "message_link": msg.jump_url,
             }
             active_firing_requests[msg.id] = request_data
-            await asyncio.to_thread(save_request, "firing_requests", msg.id, request_data)
+            await save_request("firing_requests", msg.id, request_data)
             await interaction.followup.send("✅ Рапорт на увольнение отправлен в канал.", ephemeral=True)
         else:
             await interaction.followup.send("❌ Не удалось отправить рапорт.", ephemeral=True)
@@ -272,6 +272,6 @@ async def post_auto_firing_report(member: discord.Member) -> bool:
         "message_link": msg.jump_url,
     }
     active_firing_requests[msg.id] = request_data
-    await asyncio.to_thread(save_request, "firing_requests", msg.id, request_data)
+    await save_request("firing_requests", msg.id, request_data)
     logger.info("Отправлен авто-рапорт на увольнение при выходе user_id=%s", member.id)
     return True

@@ -213,7 +213,7 @@ class EditRequestModal(Modal):
             active_requests[self.message_id] = existing
 
             # Сохраняем изменения в БД
-            await asyncio.to_thread(save_request, "requests", self.message_id, existing)
+            await save_request("requests", self.message_id, existing)
 
             await message.edit(embed=new_embed)
             await interaction.response.send_message(SuccessMessages.EDITED, ephemeral=True)

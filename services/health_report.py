@@ -38,18 +38,18 @@ def log_memory_state():
         logger.error("Отчёт состояния: ошибка чтения памяти (state): %s", e, exc_info=True)
 
 
-def _load_all_tables_for_report():
-    req = load_all_requests()
-    fir = load_all_firing_requests()
-    pro = load_all_promotion_requests()
-    wh = load_all_warehouse_requests()
-    dept = load_all_department_transfer_requests()
+async def _load_all_tables_for_report():
+    req = await load_all_requests()
+    fir = await load_all_firing_requests()
+    pro = await load_all_promotion_requests()
+    wh = await load_all_warehouse_requests()
+    dept = await load_all_department_transfer_requests()
     return req, fir, pro, wh, dept
 
 
 async def log_db_state():
     try:
-        req, fir, pro, wh, dept = await asyncio.to_thread(_load_all_tables_for_report)
+        req, fir, pro, wh, dept = await _load_all_tables_for_report()
 
         logger.info(
             "🗄️ БАЗА   | заявки=%s | увольнения=%s | повышения=%s | склад=%s | переводы=%s",
@@ -77,14 +77,11 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
     logger.info("🧹 Проверка осиротевших записей (только проверка=%s)...", dry_run)
 
     try:
-        def _load_orphans():
-            return (
-                load_all_firing_requests(),
-                load_all_promotion_requests(),
-                load_all_warehouse_requests(),
-            )
-
-        firing, promotion, warehouse = await asyncio.to_thread(_load_orphans)
+        firing, promotion, warehouse = await asyncio.gather(
+            load_all_firing_requests(),
+            load_all_promotion_requests(),
+            load_all_warehouse_requests(),
+        )
 
         # Каналы через кэш, если он инициализирован
         channel_cache = getattr(state, "channel_cache", None)
@@ -111,7 +108,7 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
                 if not exists:
                     logger.warning("🧹 ЛИШНЯЯ ЗАПИСЬ (увольнение): message_id=%s (сообщение удалено)", msg_id)
                     if not dry_run:
-                        await asyncio.to_thread(delete_request, "firing_requests", int(msg_id))
+                        await delete_request("firing_requests", int(msg_id))
 
         # Склад
         if warehouse_channel:
@@ -120,7 +117,7 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
                 if not exists:
                     logger.warning("🧹 ЛИШНЯЯ ЗАПИСЬ (склад): message_id=%s (сообщение удалено)", msg_id)
                     if not dry_run:
-                        await asyncio.to_thread(delete_request, "warehouse_requests", int(msg_id))
+                        await delete_request("warehouse_requests", int(msg_id))
 
         # Повышения
         for msg_id in list(promotion.keys()):
@@ -137,7 +134,7 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
             if not found:
                 logger.warning("🧹 ЛИШНЯЯ ЗАПИСЬ (повышение): message_id=%s (сообщение удалено)", msg_id)
                 if not dry_run:
-                    await asyncio.to_thread(delete_request, "promotion_requests", int(msg_id))
+                    await delete_request("promotion_requests", int(msg_id))
 
         # Заявки на перевод между отделами
         apply_channel_ids = [
@@ -147,7 +144,7 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
             getattr(Config, "CHANNEL_APPLY_ORLS", 0),
         ]
         apply_channel_ids = [c for c in apply_channel_ids if c]
-        dept_transfers = await asyncio.to_thread(load_all_department_transfer_requests)
+        dept_transfers = await load_all_department_transfer_requests()
         for msg_id in list(dept_transfers.keys()):
             found = False
             for ch_id in apply_channel_ids:
@@ -161,7 +158,7 @@ async def cleanup_orphan_records(bot: discord.Client, dry_run: bool = True):
             if not found:
                 logger.warning("🧹 ЛИШНЯЯ ЗАПИСЬ (заявка перевод): message_id=%s (сообщение удалено)", msg_id)
                 if not dry_run:
-                    await asyncio.to_thread(delete_department_transfer_request, int(msg_id))
+                    await delete_department_transfer_request(int(msg_id))
                     state.active_department_transfers.pop(int(msg_id), None)
 
         logger.info("🧹 Проверка лишних записей завершена")

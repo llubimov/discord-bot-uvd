@@ -6,11 +6,31 @@ from data.warehouse_items import WAREHOUSE_ITEMS
 logger = logging.getLogger(__name__)
 
 # Ключ сессии может быть как user_id (int), так и строковый ключ для спец-сценариев
-# (например редактирование чужой заявки без затирания своей корзины)
 user_sessions: Dict[Hashable, Dict[str, Any]] = {}
 
 
+def _normalize_key(session_key: Hashable) -> Hashable | None:
+    """Для чтения: если есть запись по key или str(key), возвращает подходящий ключ."""
+    if session_key in user_sessions:
+        return session_key
+    if str(session_key) in user_sessions:
+        return str(session_key)
+    return None
+
+
 class WarehouseSession:
+    @staticmethod
+    def load_sessions_into_memory(sessions_dict: Dict[str, Dict[str, Any]]) -> None:
+        """Заполняет user_sessions из словаря, полученного из БД (session_key_str -> {items, created_at})."""
+        user_sessions.clear()
+        for key, data in sessions_dict.items():
+            user_sessions[key] = {
+                "items": list((data.get("items") or [])),
+                "created_at": data.get("created_at") or datetime.now(),
+            }
+        if sessions_dict:
+            logger.info("WarehouseSession: загружено %s сессий из БД", len(sessions_dict))
+
     @staticmethod
     def purge_expired(max_age_hours: int = 24) -> int:
         cutoff = datetime.now() - timedelta(hours=max_age_hours)
@@ -33,17 +53,27 @@ class WarehouseSession:
     def get_session(session_key: Hashable) -> Dict[str, Any]:
         WarehouseSession.purge_expired(24)
 
-        if session_key not in user_sessions:
-            user_sessions[session_key] = {
-                "items": [],
-                "created_at": datetime.now(),
-            }
+        key = _normalize_key(session_key)
+        if key is not None:
+            return user_sessions[key]
+        user_sessions[session_key] = {
+            "items": [],
+            "created_at": datetime.now(),
+        }
         return user_sessions[session_key]
 
     @staticmethod
     def set_items(session_key: Hashable, items: List[Dict[str, Any]]):
         session = WarehouseSession.get_session(session_key)
         session["items"] = [dict(item) for item in (items or [])]
+        try:
+            from services.worker_queue import get_worker
+            from database import warehouse_session_set
+            get_worker().submit_fire(
+                warehouse_session_set(session_key, session["items"], session.get("created_at"))
+            )
+        except Exception as e:
+            logger.debug("WarehouseSession persist: %s", e)
 
     @staticmethod
     def add_item(session_key: Hashable, category: str, item_name: str, quantity: int) -> Tuple[bool, str]:
@@ -52,7 +82,6 @@ class WarehouseSession:
         category_data = WAREHOUSE_ITEMS[category]
         item_limit = category_data["items"][item_name]
 
-        # Определяем максимальное количество для этого предмета
         if isinstance(item_limit, dict):
             max_item = int(item_limit.get("max", 0))
         else:
@@ -88,6 +117,14 @@ class WarehouseSession:
             "quantity": quantity,
         })
 
+        try:
+            from services.worker_queue import get_worker
+            from database import warehouse_session_set
+            get_worker().submit_fire(
+                warehouse_session_set(session_key, session["items"], session.get("created_at"))
+            )
+        except Exception as e:
+            logger.debug("WarehouseSession persist: %s", e)
         return True, ""
 
     @staticmethod
@@ -97,12 +134,31 @@ class WarehouseSession:
 
     @staticmethod
     def clear_session(session_key: Hashable):
-        user_sessions.pop(session_key, None)
+        key = _normalize_key(session_key)
+        k = key if key in user_sessions else str(session_key)
+        if k in user_sessions:
+            user_sessions.pop(k, None)
+        if session_key in user_sessions:
+            user_sessions.pop(session_key, None)
+        try:
+            from services.worker_queue import get_worker
+            from database import warehouse_session_delete
+            get_worker().submit_fire(warehouse_session_delete(session_key))
+        except Exception as e:
+            logger.debug("WarehouseSession delete persist: %s", e)
 
     @staticmethod
     def remove_item(session_key: Hashable, index: int) -> bool:
         session = WarehouseSession.get_session(session_key)
         if 0 <= index < len(session["items"]):
             session["items"].pop(index)
+            try:
+                from services.worker_queue import get_worker
+                from database import warehouse_session_set
+                get_worker().submit_fire(
+                    warehouse_session_set(session_key, session["items"], session.get("created_at"))
+                )
+            except Exception as e:
+                logger.debug("WarehouseSession persist: %s", e)
             return True
         return False

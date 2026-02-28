@@ -66,7 +66,7 @@ class DepartmentRejectModal(Modal, title="Отклонение заявки"):
                     pass
 
             active_department_transfers.pop(self.message_id, None)
-            await asyncio.to_thread(delete_department_transfer_request, self.message_id)
+            await delete_department_transfer_request(self.message_id)
 
             await interaction.followup.send("✅ Заявка отклонена, пользователь уведомлён.", ephemeral=True)
         except Exception as e:

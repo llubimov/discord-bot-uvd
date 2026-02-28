@@ -1,16 +1,16 @@
 """
 Очередь задач для тяжёлых операций (БД и т.п.).
-Воркер обрабатывает задачи в одном потоке по одной — снижает конкуренцию за SQLite и нагрузку на event loop.
+Поддерживает как синхронные (to_thread), так и асинхронные (await) функции.
 """
 import asyncio
+import inspect
 import logging
-from typing import Any, Callable, TypeVar
+from typing import Any, Callable, Coroutine, TypeVar, Union
 
 logger = logging.getLogger(__name__)
 
 T = TypeVar("T")
 
-# Максимум задач в очереди, чтобы при всплеске не раздувать память
 MAX_QUEUE_SIZE = 2000
 
 
@@ -21,7 +21,6 @@ class WorkerQueue:
         self._running = False
 
     def submit(self, fn: Callable[..., T], *args: Any, **kwargs: Any) -> asyncio.Future[T]:
-        """Поставить задачу в очередь и вернуть Future с результатом. await future — получить результат."""
         future: asyncio.Future = asyncio.get_running_loop().create_future()
         try:
             self._queue.put_nowait((fn, args, kwargs, future))
@@ -29,12 +28,17 @@ class WorkerQueue:
             future.set_exception(RuntimeError("Очередь задач переполнена"))
         return future
 
-    def submit_fire(self, fn: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
-        """Поставить задачу в очередь без ожидания результата (fire-and-forget)."""
+    def submit_fire(
+        self,
+        fn: Union[Callable[..., Any], Coroutine[Any, Any, Any]],
+        *args: Any,
+        **kwargs: Any,
+    ) -> None:
+        """Поставить задачу в очередь без ожидания результата. fn может быть sync, async или корутиной."""
         try:
             self._queue.put_nowait((fn, args, kwargs, None))
         except asyncio.QueueFull:
-            logger.warning("Очередь воркера переполнена, задача %s пропущена", fn.__name__)
+            logger.warning("Очередь воркера переполнена, задача %s пропущена", getattr(fn, "__name__", fn))
 
     async def _run_worker(self) -> None:
         while self._running:
@@ -44,7 +48,12 @@ class WorkerQueue:
                 continue
             fn, args, kwargs, future = item
             try:
-                result = await asyncio.to_thread(fn, *args, **kwargs)
+                if asyncio.iscoroutine(fn):
+                    result = await fn
+                elif inspect.iscoroutinefunction(fn):
+                    result = await fn(*args, **kwargs)
+                else:
+                    result = await asyncio.to_thread(fn, *args, **kwargs)
                 if future is not None and not future.done():
                     future.set_result(result)
             except Exception as e:

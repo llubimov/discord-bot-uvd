@@ -167,7 +167,7 @@ class BaseRejectModal(Modal):
                 except discord.NotFound:
                     state_dict = self.get_state_dict()
                     state_dict.pop(self.message_id, None)
-                    await asyncio.to_thread(delete_request, self.get_table_name(), self.message_id)
+                    await delete_request(self.get_table_name(), self.message_id)
 
                     await interaction.response.send_message(
                         f"❌ {self.get_item_name()} не найдена (сообщение удалено). Запись очищена.",
@@ -257,7 +257,7 @@ class BaseRejectModal(Modal):
                 state_dict = self.get_state_dict()
                 if self.message_id in state_dict:
                     del state_dict[self.message_id]
-                await asyncio.to_thread(delete_request, self.get_table_name(), self.message_id)
+                await delete_request(self.get_table_name(), self.message_id)
 
                 # 8) Ответ
                 _item = self.get_item_name()

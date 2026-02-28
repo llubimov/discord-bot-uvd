@@ -179,7 +179,7 @@ class RequestView(View):
 
                 if interaction.message.id in active_requests:
                     del active_requests[interaction.message.id]
-                    await asyncio.to_thread(delete_request, 'requests', interaction.message.id)
+                    await delete_request('requests', interaction.message.id)
 
                 await interaction.followup.send(f"✅ заявка принята! выдано ролей: {len(roles)}", ephemeral=True)
 

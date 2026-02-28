@@ -100,7 +100,7 @@ class WarehouseRejectModal(Modal, title="Причина отказа"):
 
                 try:
                     from database import delete_warehouse_request
-                    await asyncio.to_thread(delete_warehouse_request, self.message_id)
+                    await delete_warehouse_request(self.message_id)
                 except Exception as e:
                     logger.warning("Склад: не удалось удалить запись из БД после отказа: %s", e, exc_info=True)
 

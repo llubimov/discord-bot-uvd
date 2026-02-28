@@ -74,7 +74,7 @@ class RejectReasonModal(Modal, title='Отклонение заявки'):
 
             if self.message_id in active_requests:
                 del active_requests[self.message_id]
-                await asyncio.to_thread(delete_request, 'requests', self.message_id)
+                await delete_request('requests', self.message_id)
 
             await interaction.response.send_message(f"✅ Заявка отклонена. Причина: {reason}", ephemeral=True)
             if dm_warning:

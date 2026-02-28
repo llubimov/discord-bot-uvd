@@ -14,6 +14,7 @@ from services.audit import send_to_audit
 from services.action_locks import action_lock
 from database import delete_request
 from constants import StatusValues, FieldNames, WebhookPatterns
+from services.firing_fsm import can_approve
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +130,10 @@ class FiringView(View):
                     await interaction.followup.send(ErrorMessages.NOT_FOUND.format(item="рапорт"), ephemeral=True)
                     return
 
+                if not can_approve(request_data):
+                    await interaction.followup.send("⚠️ Этот рапорт уже обработан.", ephemeral=True)
+                    return
+
                 # Защита от уже обработанного рапорта (по embed статусу)
                 try:
                     for field in interaction.message.embeds[0].fields:
@@ -183,7 +188,7 @@ class FiringView(View):
 
                     active_firing_requests.pop(interaction.message.id, None)
                     try:
-                        await asyncio.to_thread(delete_request, "firing_requests", interaction.message.id)
+                        await delete_request("firing_requests", interaction.message.id)
                     except Exception as e:
                         logger.warning("Не удалось удалить firing_request из БД: %s", e)
 
@@ -325,7 +330,7 @@ class FiringView(View):
                 # Чистим state + БД
                 active_firing_requests.pop(interaction.message.id, None)
                 try:
-                    await asyncio.to_thread(delete_request, "firing_requests", interaction.message.id)
+                    await delete_request("firing_requests", interaction.message.id)
                 except Exception as e:
                     logger.warning("Не удалось удалить firing_request %s из БД: %s", interaction.message.id, e, exc_info=True)
 

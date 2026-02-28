@@ -53,6 +53,9 @@ class ViewRestorer:
         logger.info("Восстановление View завершено")
 
     def _restore_start_views(self):
+        # Единый список персистентных View (без привязки к message_id). После рефакторинга проверить полноту.
+        # Типы: старт заявок, склад старт, переводы отделов (grom/pps/osb/orls), академия, админ-перевод,
+        # увольнения (FiringStartView), рапорты повышения (orls/osb/grom/pps).
         self.bot.add_view(StartView())
         self.bot.add_view(WarehouseStartView())
         # Заявки на перевод между отделами (персистентные view для кнопок в шапке каналов)
@@ -78,20 +81,26 @@ class ViewRestorer:
         logger.info("Стартовые View восстановлены")
 
     async def _load_requests_from_db(self):
-        # SQLite синхронный — загружаем все таблицы параллельно в потоках
-        (
-            state.active_requests,
-            state.active_firing_requests,
-            state.active_promotion_requests,
-            state.warehouse_requests,
-            state.active_department_transfers,
-        ) = await asyncio.gather(
-            asyncio.to_thread(load_all_requests),
-            asyncio.to_thread(load_all_firing_requests),
-            asyncio.to_thread(load_all_promotion_requests),
-            asyncio.to_thread(load_all_warehouse_requests),
-            asyncio.to_thread(load_all_department_transfer_requests),
-        )
+        # Загружаем каждую таблицу отдельно, чтобы при сбое одной не перезатирать остальной state.
+        results = {}
+        for name, loader in [
+            ("active_requests", load_all_requests),
+            ("active_firing_requests", load_all_firing_requests),
+            ("active_promotion_requests", load_all_promotion_requests),
+            ("warehouse_requests", load_all_warehouse_requests),
+            ("active_department_transfers", load_all_department_transfer_requests),
+        ]:
+            try:
+                results[name] = await loader()
+            except Exception as e:
+                logger.error("Ошибка загрузки %s из БД: %s", name, e, exc_info=True)
+                results[name] = getattr(state, name, None) or {}
+
+        state.active_requests = results["active_requests"]
+        state.active_firing_requests = results["active_firing_requests"]
+        state.active_promotion_requests = results["active_promotion_requests"]
+        state.warehouse_requests = results["warehouse_requests"]
+        state.active_department_transfers = results["active_department_transfers"]
 
         logger.info(
             "📦 Загружено из БД: заявок=%s, увольнений=%s, повышений=%s, склад=%s, переводы=%s",
@@ -111,7 +120,7 @@ class ViewRestorer:
 
         storage.pop(msg_id_int, None)
         try:
-            await asyncio.to_thread(delete_request, table_name, msg_id_int)
+            await delete_request(table_name, msg_id_int)
             logger.info("🧹 Удалена осиротевшая запись %s msg_id=%s %s", table_name, msg_id_int, f"({reason})" if reason else "")
             return True
         except Exception as e:
@@ -402,7 +411,7 @@ class ViewRestorer:
             if not found:
                 state.active_department_transfers.pop(msg_id_int, None)
                 try:
-                    await asyncio.to_thread(delete_department_transfer_request, msg_id_int)
+                    await delete_department_transfer_request(msg_id_int)
                     deleted += 1
                 except Exception as e:
                     logger.warning("⚠️ Не удалось удалить осиротевшую заявку перевод msg_id=%s: %s", msg_id_int, e)

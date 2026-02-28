@@ -25,6 +25,7 @@ from services.department_roles import (
 )
 from services.department_nickname import get_transfer_nickname
 from services.action_locks import action_lock
+from services.promotion_draft_cleanup import clear_promotion_draft_for_department
 
 logger = logging.getLogger(__name__)
 
@@ -287,6 +288,8 @@ class DepartmentApprovalView(View):
                     return
 
                 await apply_role_changes(member, remove=to_remove, add=to_add)
+
+                clear_promotion_draft_for_department(self.user_id, self.source_dept)
 
                 verify_failed_msg = None
                 try:

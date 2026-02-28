@@ -7,6 +7,7 @@ import re
 from config import Config
 from views.theme import GREEN
 from views.message_texts import ErrorMessages
+import state
 from state import active_promotion_requests
 from utils.rate_limiter import apply_role_changes
 from utils.embed_utils import copy_embed, add_officer_field, update_embed_status
@@ -83,7 +84,12 @@ class PromotionView(View):
         member_roles = set(interaction.user.roles or [])
 
         if custom_id == "promotion_accept":
-            staff_role = interaction.guild.get_role(main_role_id)
+            staff_role = None
+            role_cache = getattr(state, "role_cache", None)
+            if role_cache:
+                staff_role = await role_cache.get_role(interaction.guild.id, main_role_id)
+            if staff_role is None:
+                staff_role = interaction.guild.get_role(main_role_id)
             if not staff_role or staff_role not in member_roles:
                 await interaction.response.send_message(ErrorMessages.NO_PERMISSION, ephemeral=True)
                 return False
@@ -92,10 +98,15 @@ class PromotionView(View):
         # Для отклонения (promotion_reject) могут использоваться несколько ролей:
         # основная + дополнительные из списка.
         allowed_roles = []
-        for rid in [main_role_id, *extra_role_ids]:
-            role = interaction.guild.get_role(int(rid))
-            if role:
-                allowed_roles.append(role)
+        role_cache = getattr(state, "role_cache", None)
+        role_ids_to_fetch = [main_role_id, *extra_role_ids]
+        if role_cache:
+            allowed_roles = [r for r in await role_cache.get_many_roles(interaction.guild.id, role_ids_to_fetch) if r]
+        else:
+            for rid in role_ids_to_fetch:
+                role = interaction.guild.get_role(int(rid))
+                if role:
+                    allowed_roles.append(role)
 
         if not any(r in member_roles for r in allowed_roles):
             await interaction.response.send_message(ErrorMessages.NO_PERMISSION, ephemeral=True)
@@ -249,7 +260,12 @@ class PromotionView(View):
                     )
                     return
 
-                new_role = interaction.guild.get_role(int(new_role_id))
+                new_role = None
+                role_cache = getattr(state, "role_cache", None)
+                if role_cache:
+                    new_role = await role_cache.get_role(interaction.guild.id, int(new_role_id))
+                if new_role is None:
+                    new_role = interaction.guild.get_role(int(new_role_id))
                 if not new_role:
                     await interaction.followup.send(
                         f"❌ Роль для повышения не найдена на сервере (role_id={new_role_id}).",
@@ -331,7 +347,12 @@ class PromotionView(View):
                         or new_rank_norm in ("сержант", "сержант полиции")
                     )
                     if is_sergeant:
-                        role_passed = interaction.guild.get_role(int(role_passed_academy_id))
+                        role_passed = None
+                        role_cache = getattr(state, "role_cache", None)
+                        if role_cache:
+                            role_passed = await role_cache.get_role(interaction.guild.id, int(role_passed_academy_id))
+                        if role_passed is None:
+                            role_passed = interaction.guild.get_role(int(role_passed_academy_id))
                         if role_passed and role_passed not in member.roles:
                             try:
                                 await apply_role_changes(member, add=[role_passed])

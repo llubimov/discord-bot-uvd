@@ -15,6 +15,7 @@ from services.department_roles import (
 )
 from utils.rate_limiter import apply_role_changes, safe_discord_call
 from views.message_texts import ErrorMessages
+from services.promotion_draft_cleanup import clear_promotion_draft_for_department
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +91,8 @@ class AdminTransferModal(Modal):
                 return
 
             await apply_role_changes(member, remove=to_remove, add=to_add)
+
+            clear_promotion_draft_for_department(target_id, self.from_dept)
 
             display = (member.display_name or "").strip()
             full_name = display.split(" | ", 1)[-1].strip() if " | " in display else display

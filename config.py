@@ -164,6 +164,36 @@ def _parse_prefixed_channel_role_map(prefix: str) -> dict[int, int]:
     return result
 
 
+def _get_ordered_promotion_channels(prefix: str = "PROMOTION_CH_") -> list[tuple[int, list[int]]]:
+    """Список (channel_id, role_ids) по порядку _01, _02, ..."""
+    pairs: list[tuple[str, int, list[int]]] = []
+    for key, value in os.environ.items():
+        if not key.startswith(prefix):
+            continue
+        raw = str(value).strip()
+        if ":" not in raw:
+            continue
+        channel_id_str, role_ids_str = raw.split(":", 1)
+        try:
+            ch_id = int(channel_id_str.strip())
+        except ValueError:
+            continue
+        role_ids = []
+        for part in role_ids_str.split(","):
+            part = part.strip()
+            if not part:
+                continue
+            try:
+                role_ids.append(int(part))
+            except ValueError:
+                continue
+        if not role_ids:
+            continue
+        pairs.append((key, ch_id, role_ids))
+    pairs.sort(key=lambda x: x[0])
+    return [(ch_id, role_ids) for _, ch_id, role_ids in pairs]
+
+
 def _parse_rank_role_mapping_legacy(raw: str) -> dict[str, int]:
     result: dict[str, int] = {}
     if not raw:
@@ -287,6 +317,8 @@ class Config:
     CHANNEL_APPLY_OSB = _env_int("CHANNEL_APPLY_OSB", 0)
     CHANNEL_APPLY_ORLS = _env_int("CHANNEL_APPLY_ORLS", 0)
     CHANNEL_ADMIN_TRANSFER = _env_int("CHANNEL_ADMIN_TRANSFER", 0)
+    # 1 = при старте создавать сообщения «Подать рапорт» в каналах
+    PROMOTION_AUTO_SEND_ON_STARTUP = os.getenv("PROMOTION_AUTO_SEND_ON_STARTUP", "1").strip().lower() in ("1", "true", "yes")
     CHANNEL_CADRE_LOG = _env_int("CHANNEL_CADRE_LOG", 0)
 
     # Роли начальников/замов отделов (для одобрения заявок и админ-перевода)
@@ -321,25 +353,35 @@ class Config:
     ROLE_PASSED_ACADEMY = _env_int("ROLE_PASSED_ACADEMY", 0) or ROLE_ACADEMY
 
     # Каналы повышений (канал -> список ролей кадровика)
-    # Формат в .env:
-    #   PROMOTION_CH_01=channel_id:role_id                (одна роль)
-    #   PROMOTION_CH_02=channel_id:role_id1,role_id2,...  (несколько ролей)
-    PROMOTION_CHANNELS = _parse_prefixed_channel_role_map("PROMOTION_CH_")
+    # Порядок в .env: _01=Академия, _02=ОСБ, _03=ГРОМ, _04=ППС, _05=ОРЛС
+    _ordered_promotion = _get_ordered_promotion_channels()
+    PROMOTION_CHANNELS = {ch_id: role_ids for ch_id, role_ids in _ordered_promotion}
     if not PROMOTION_CHANNELS:
-        # Легаси-формат: "chan1:role1,chan2:role2"
+        PROMOTION_CHANNELS = _parse_prefixed_channel_role_map("PROMOTION_CH_")
+    if not PROMOTION_CHANNELS:
         legacy_map = _parse_promotion_channels_legacy(os.getenv("PROMOTION_CHANNELS", ""))
         PROMOTION_CHANNELS = {cid: [rid] for cid, rid in legacy_map.items()}
-
     if not PROMOTION_CHANNELS:
         raise ValueError(
             "PROMOTION_CHANNELS / PROMOTION_CH_* не заданы в .env. "
             "Укажите каналы повышений и роль для их обработки."
         )
+    # Каналы, куда создавать сообщение «Подать рапорт» (из слотов _02=ОСБ, _03=ГРОМ, _04=ППС, _05=ОРЛС)
+    PROMOTION_APPLY_CHANNEL_OSB = _ordered_promotion[1][0] if len(_ordered_promotion) >= 2 else 0
+    PROMOTION_APPLY_CHANNEL_GROM = _ordered_promotion[2][0] if len(_ordered_promotion) >= 3 else 0
+    PROMOTION_APPLY_CHANNEL_PPS = _ordered_promotion[3][0] if len(_ordered_promotion) >= 4 else 0
+    PROMOTION_APPLY_CHANNEL_ORLS = _ordered_promotion[4][0] if len(_ordered_promotion) >= 5 else 0
 
     # Время
     REQUEST_COOLDOWN = _env_int("REQUEST_COOLDOWN", 60)
     REQUEST_EXPIRY_DAYS = _env_int("REQUEST_EXPIRY_DAYS", 7)
+    ORLS_DRAFT_EXPIRY_DAYS = _env_int("ORLS_DRAFT_EXPIRY_DAYS", 14)
+    OSB_DRAFT_EXPIRY_DAYS = _env_int("OSB_DRAFT_EXPIRY_DAYS", 14)
+    GROM_DRAFT_EXPIRY_DAYS = _env_int("GROM_DRAFT_EXPIRY_DAYS", 14)
+    PPS_DRAFT_EXPIRY_DAYS = _env_int("PPS_DRAFT_EXPIRY_DAYS", 14)
     START_MESSAGE_CHECK_INTERVAL = _env_int("START_MESSAGE_CHECK_INTERVAL", 60)
+    # Интервал проверки «сообщение рапорта внизу» (сек). 0 = только по новым сообщениям.
+    PROMOTION_SETUP_CHECK_INTERVAL = _env_int("PROMOTION_SETUP_CHECK_INTERVAL", 90)
     WAREHOUSE_COOLDOWN_HOURS = _env_int("WAREHOUSE_COOLDOWN_HOURS", 6)
     EXAM_BUTTON_TIMEOUT = _env_int("EXAM_BUTTON_TIMEOUT", 120)
     # Таймауты View склада (сек): корзина и подменю выбора категории/предмета

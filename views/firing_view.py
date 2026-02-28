@@ -187,6 +187,12 @@ class FiringView(View):
                     except Exception as e:
                         logger.warning("Не удалось удалить firing_request из БД: %s", e)
 
+                    try:
+                        from services.promotion_draft_cleanup import clear_promotion_draft_for_user
+                        clear_promotion_draft_for_user(int(request_data.get("discord_id", 0)))
+                    except Exception:
+                        pass
+
                     await interaction.followup.send(
                         f"✅ Рапорт зафиксирован. Сотрудник **{full_name}** уже покинул сервер.",
                         ephemeral=True,
@@ -322,6 +328,12 @@ class FiringView(View):
                     await asyncio.to_thread(delete_request, "firing_requests", interaction.message.id)
                 except Exception as e:
                     logger.warning("Не удалось удалить firing_request %s из БД: %s", interaction.message.id, e, exc_info=True)
+
+                try:
+                    from services.promotion_draft_cleanup import clear_promotion_draft_for_user
+                    clear_promotion_draft_for_user(member.id)
+                except Exception:
+                    pass
 
                 await interaction.followup.send(f"✅ Пользователь {member.mention} уволен.", ephemeral=True)
                 if dm_warning:

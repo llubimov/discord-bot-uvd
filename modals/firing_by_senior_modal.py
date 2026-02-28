@@ -97,6 +97,11 @@ class FiringBySeniorModal(Modal):
                 )
             except Exception as e:
                 logger.warning("FiringBySenior: аудит (участник не на сервере) %s: %s", target_id, e)
+            try:
+                from services.promotion_draft_cleanup import clear_promotion_draft_for_user
+                clear_promotion_draft_for_user(target_id)
+            except Exception:
+                pass
             await interaction.followup.send(
                 f"✅ Участник с ID **{target_id}** не найден на сервере. Кадровый аудит отправлен с причиной.",
                 ephemeral=True,
@@ -167,6 +172,12 @@ class FiringBySeniorModal(Modal):
             embed.add_field(name="Новый ник", value=f"`{new_nick}`", inline=False)
             await member.send(embed=embed)
         except (discord.Forbidden, discord.HTTPException):
+            pass
+
+        try:
+            from services.promotion_draft_cleanup import clear_promotion_draft_for_user
+            clear_promotion_draft_for_user(member.id)
+        except Exception:
             pass
 
         await interaction.followup.send(

@@ -171,3 +171,17 @@ def get_member_rank_display(member: Optional[discord.Member]) -> str:
         return ""
     top = max(member_rank_roles, key=lambda r: r.position)
     return role_to_name.get(top.id, top.name) or ""
+
+
+def is_promotion_key_allowed_for_member(member: Optional[discord.Member], promotion_key: str) -> bool:
+    """Разрешено ли участнику подать рапорт на данное повышение (строго следующее звание)."""
+    if not member or not (promotion_key or "").strip():
+        return False
+    canon = _canon_transition_key(promotion_key)
+    if not canon:
+        return False
+    from_rank_canon = canon[0]
+    member_rank = get_member_rank_display(member)
+    if not member_rank:
+        return False
+    return _canon_rank(member_rank) == from_rank_canon

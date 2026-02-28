@@ -4,7 +4,7 @@ from datetime import datetime, timedelta
 
 import state
 from config import Config
-from database import cleanup_old_requests_db
+from database import cleanup_old_requests_db, cleanup_old_orls_drafts, cleanup_old_osb_drafts, cleanup_old_grom_drafts, cleanup_old_pps_drafts
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +53,30 @@ class CleanupManager:
 
             # БД: все таблицы (requests, firing_requests, promotion_requests, warehouse_requests, department_transfer_requests)
             await asyncio.to_thread(cleanup_old_requests_db, Config.REQUEST_EXPIRY_DAYS)
+
+            # Черновики рапортов ОРЛС: удалить старше N дней (из конфига)
+            orls_days = getattr(Config, "ORLS_DRAFT_EXPIRY_DAYS", 14)
+            orls_deleted = await asyncio.to_thread(cleanup_old_orls_drafts, orls_days)
+            if orls_deleted:
+                logger.info("🧹 Удалено черновиков ОРЛС (старше %s дней): %s", orls_days, orls_deleted)
+
+            # Черновики рапортов ОСБ
+            osb_days = getattr(Config, "OSB_DRAFT_EXPIRY_DAYS", 14)
+            osb_deleted = await asyncio.to_thread(cleanup_old_osb_drafts, osb_days)
+            if osb_deleted:
+                logger.info("🧹 Удалено черновиков ОСБ (старше %s дней): %s", osb_days, osb_deleted)
+
+            # Черновики рапортов ГРОМ
+            grom_days = getattr(Config, "GROM_DRAFT_EXPIRY_DAYS", 14)
+            grom_deleted = await asyncio.to_thread(cleanup_old_grom_drafts, grom_days)
+            if grom_deleted:
+                logger.info("🧹 Удалено черновиков ГРОМ (старше %s дней): %s", grom_days, grom_deleted)
+
+            # Черновики рапортов ППС
+            pps_days = getattr(Config, "PPS_DRAFT_EXPIRY_DAYS", 14)
+            pps_deleted = await asyncio.to_thread(cleanup_old_pps_drafts, pps_days)
+            if pps_deleted:
+                logger.info("🧹 Удалено черновиков ППС (старше %s дней): %s", pps_days, pps_deleted)
 
             # Просроченные сессии корзины склада (редактирование/выдача)
             try:

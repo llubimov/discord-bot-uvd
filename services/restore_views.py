@@ -11,6 +11,7 @@ from views.warehouse_request_buttons import WarehouseRequestView
 from views.department_approval_view import DepartmentApprovalView
 from views.apply_channel_view import ApplyChannelView
 from views.academy_apply_view import AcademyApplyView
+from views.orls_promotion_apply_view import OrlsPromotionApplyView
 from services.position_admin_transfer import AdminTransferView
 from services.firing_position_manager import FiringStartView
 
@@ -63,6 +64,17 @@ class ViewRestorer:
         self.bot.add_view(AdminTransferView())
         # Канал увольнений: кнопки «Подать заявление» и «Уволить» (старший состав)
         self.bot.add_view(FiringStartView())
+        # Рапорты на повышение ОРЛС (селектор повышения)
+        self.bot.add_view(OrlsPromotionApplyView())
+        # Рапорты на повышение ОСБ
+        from views.osb_promotion_apply_view import OsbPromotionApplyView
+        self.bot.add_view(OsbPromotionApplyView())
+        # Рапорты на повышение ГРОМ (ОСН «Гром»)
+        from views.grom_promotion_apply_view import GromPromotionApplyView
+        self.bot.add_view(GromPromotionApplyView())
+        # Рапорты на повышение ППС
+        from views.pps_promotion_apply_view import PpsPromotionApplyView
+        self.bot.add_view(PpsPromotionApplyView())
         logger.info("Стартовые View восстановлены")
 
     async def _load_requests_from_db(self):

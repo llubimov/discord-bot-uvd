@@ -19,13 +19,20 @@ logger = logging.getLogger(__name__)
 
 def log_memory_state():
     try:
+        orls_d = len(getattr(state, "orls_draft_reports", {}) or {})
+        osb_d = len(getattr(state, "osb_draft_reports", {}) or {})
+        grom_d = len(getattr(state, "grom_draft_reports", {}) or {})
+        pps_d = len(getattr(state, "pps_draft_reports", {}) or {})
+        promo_setup = sum(len(v) for v in (getattr(state, "promotion_setup_messages", {}) or {}).values())
         logger.info(
-            "📊 ПАМЯТЬ | заявки=%s | увольнения=%s | повышения=%s | склад=%s | переводы=%s",
+            "📊 ПАМЯТЬ | заявки=%s | увольнения=%s | повышения=%s | склад=%s | переводы=%s | черновики_ОРЛС=%s ОСБ=%s ГРОМ=%s ППС=%s | сообщ_рапортов=%s",
             len(getattr(state, "active_requests", {}) or {}),
             len(getattr(state, "active_firing_requests", {}) or {}),
             len(getattr(state, "active_promotion_requests", {}) or {}),
             len(getattr(state, "warehouse_requests", {}) or {}),
             len(getattr(state, "active_department_transfers", {}) or {}),
+            orls_d, osb_d, grom_d, pps_d,
+            promo_setup,
         )
     except Exception as e:
         logger.error("Отчёт состояния: ошибка чтения памяти (state): %s", e, exc_info=True)

@@ -93,6 +93,34 @@ def init_db():
                 created_at TEXT
             )
         """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS orls_draft_reports (
+                user_id INTEGER PRIMARY KEY,
+                data TEXT NOT NULL,
+                updated_at TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS osb_draft_reports (
+                user_id INTEGER PRIMARY KEY,
+                data TEXT NOT NULL,
+                updated_at TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS grom_draft_reports (
+                user_id INTEGER PRIMARY KEY,
+                data TEXT NOT NULL,
+                updated_at TEXT
+            )
+        """)
+        c.execute("""
+            CREATE TABLE IF NOT EXISTS pps_draft_reports (
+                user_id INTEGER PRIMARY KEY,
+                data TEXT NOT NULL,
+                updated_at TEXT
+            )
+        """)
         conn.commit()
     finally:
         conn.close()
@@ -176,6 +204,250 @@ def load_all_promotion_requests():
 
 def load_all_warehouse_requests():
     return _load_all("warehouse_requests")
+
+
+def save_orls_draft(user_id: int, draft: Dict[str, Any]) -> None:
+    storable = {k: v for k, v in draft.items() if k != "_ephemeral_msg"}
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        data_json = json.dumps(storable, ensure_ascii=False, default=str)
+        updated_at = datetime.now().isoformat()
+        c.execute(
+            "INSERT OR REPLACE INTO orls_draft_reports (user_id, data, updated_at) VALUES (?, ?, ?)",
+            (user_id, data_json, updated_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def load_orls_draft(user_id: int) -> Dict[str, Any] | None:
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT data FROM orls_draft_reports WHERE user_id = ?", (user_id,))
+        row = c.fetchone()
+        if not row or not row[0]:
+            return None
+        data = json.loads(row[0])
+        data["_ephemeral_msg"] = None
+        data.setdefault("message_id", None)
+        return data
+    except json.JSONDecodeError as e:
+        logger.warning("Ошибка чтения orls_draft user_id=%s: %s", user_id, e)
+        return None
+    finally:
+        conn.close()
+
+
+def delete_orls_draft(user_id: int) -> None:
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("DELETE FROM orls_draft_reports WHERE user_id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def cleanup_old_orls_drafts(days: int = 14) -> int:
+    """Удалить черновики ОРЛС старше days дней. Возвращает количество удалённых."""
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT user_id FROM orls_draft_reports WHERE updated_at < ?", (cutoff,))
+        to_delete = c.fetchall()
+        for (uid,) in to_delete:
+            c.execute("DELETE FROM orls_draft_reports WHERE user_id = ?", (uid,))
+        conn.commit()
+        return len(to_delete)
+    finally:
+        conn.close()
+
+
+def save_osb_draft(user_id: int, draft: Dict[str, Any]) -> None:
+    storable = {k: v for k, v in draft.items() if k != "_ephemeral_msg"}
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        data_json = json.dumps(storable, ensure_ascii=False, default=str)
+        updated_at = datetime.now().isoformat()
+        c.execute(
+            "INSERT OR REPLACE INTO osb_draft_reports (user_id, data, updated_at) VALUES (?, ?, ?)",
+            (user_id, data_json, updated_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def load_osb_draft(user_id: int) -> Dict[str, Any] | None:
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT data FROM osb_draft_reports WHERE user_id = ?", (user_id,))
+        row = c.fetchone()
+        if not row or not row[0]:
+            return None
+        data = json.loads(row[0])
+        data["_ephemeral_msg"] = None
+        data.setdefault("message_id", None)
+        return data
+    except json.JSONDecodeError as e:
+        logger.warning("Ошибка чтения osb_draft user_id=%s: %s", user_id, e)
+        return None
+    finally:
+        conn.close()
+
+
+def delete_osb_draft(user_id: int) -> None:
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("DELETE FROM osb_draft_reports WHERE user_id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def cleanup_old_osb_drafts(days: int = 14) -> int:
+    """Удалить черновики ОСБ старше days дней. Возвращает количество удалённых."""
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT user_id FROM osb_draft_reports WHERE updated_at < ?", (cutoff,))
+        to_delete = c.fetchall()
+        for (uid,) in to_delete:
+            c.execute("DELETE FROM osb_draft_reports WHERE user_id = ?", (uid,))
+        conn.commit()
+        return len(to_delete)
+    finally:
+        conn.close()
+
+
+def save_grom_draft(user_id: int, draft: Dict[str, Any]) -> None:
+    storable = {k: v for k, v in draft.items() if k != "_ephemeral_msg"}
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        data_json = json.dumps(storable, ensure_ascii=False, default=str)
+        updated_at = datetime.now().isoformat()
+        c.execute(
+            "INSERT OR REPLACE INTO grom_draft_reports (user_id, data, updated_at) VALUES (?, ?, ?)",
+            (user_id, data_json, updated_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def load_grom_draft(user_id: int) -> Dict[str, Any] | None:
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT data FROM grom_draft_reports WHERE user_id = ?", (user_id,))
+        row = c.fetchone()
+        if not row or not row[0]:
+            return None
+        data = json.loads(row[0])
+        data["_ephemeral_msg"] = None
+        data.setdefault("message_id", None)
+        return data
+    except json.JSONDecodeError as e:
+        logger.warning("Ошибка чтения grom_draft user_id=%s: %s", user_id, e)
+        return None
+    finally:
+        conn.close()
+
+
+def delete_grom_draft(user_id: int) -> None:
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("DELETE FROM grom_draft_reports WHERE user_id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def cleanup_old_grom_drafts(days: int = 14) -> int:
+    """Удалить черновики ГРОМ старше days дней. Возвращает количество удалённых."""
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT user_id FROM grom_draft_reports WHERE updated_at < ?", (cutoff,))
+        to_delete = c.fetchall()
+        for (uid,) in to_delete:
+            c.execute("DELETE FROM grom_draft_reports WHERE user_id = ?", (uid,))
+        conn.commit()
+        return len(to_delete)
+    finally:
+        conn.close()
+
+
+def save_pps_draft(user_id: int, draft: Dict[str, Any]) -> None:
+    storable = {k: v for k, v in draft.items() if k != "_ephemeral_msg"}
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        data_json = json.dumps(storable, ensure_ascii=False, default=str)
+        updated_at = datetime.now().isoformat()
+        c.execute(
+            "INSERT OR REPLACE INTO pps_draft_reports (user_id, data, updated_at) VALUES (?, ?, ?)",
+            (user_id, data_json, updated_at),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def load_pps_draft(user_id: int) -> Dict[str, Any] | None:
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT data FROM pps_draft_reports WHERE user_id = ?", (user_id,))
+        row = c.fetchone()
+        if not row or not row[0]:
+            return None
+        data = json.loads(row[0])
+        data["_ephemeral_msg"] = None
+        data.setdefault("message_id", None)
+        return data
+    except json.JSONDecodeError as e:
+        logger.warning("Ошибка чтения pps_draft user_id=%s: %s", user_id, e)
+        return None
+    finally:
+        conn.close()
+
+
+def delete_pps_draft(user_id: int) -> None:
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("DELETE FROM pps_draft_reports WHERE user_id = ?", (user_id,))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def cleanup_old_pps_drafts(days: int = 14) -> int:
+    """Удалить черновики ППС старше days дней. Возвращает количество удалённых."""
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    conn = _connect()
+    try:
+        c = conn.cursor()
+        c.execute("SELECT user_id FROM pps_draft_reports WHERE updated_at < ?", (cutoff,))
+        to_delete = c.fetchall()
+        for (uid,) in to_delete:
+            c.execute("DELETE FROM pps_draft_reports WHERE user_id = ?", (uid,))
+        conn.commit()
+        return len(to_delete)
+    finally:
+        conn.close()
 
 
 def cleanup_old_requests_db(days: int):

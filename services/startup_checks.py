@@ -212,6 +212,15 @@ async def run_startup_checks(bot: discord.Client):
     _check_promotion_channels(guild)
     _check_rank_roles(guild, bot_role)
 
+    for name, ch_id in (
+        ("Канал рапортов ОРЛС", getattr(Config, "PROMOTION_APPLY_CHANNEL_ORLS", 0)),
+        ("Канал рапортов ОСБ", getattr(Config, "PROMOTION_APPLY_CHANNEL_OSB", 0)),
+        ("Канал рапортов ГРОМ", getattr(Config, "PROMOTION_APPLY_CHANNEL_GROM", 0)),
+        ("Канал рапортов ППС", getattr(Config, "PROMOTION_APPLY_CHANNEL_PPS", 0)),
+    ):
+        if ch_id:
+            _check_channel(guild, ch_id, name)
+
     guild_perms = me.guild_permissions
     if not guild_perms.manage_roles:
         logger.error(_err("У бота нет права 'Управлять ролями'"))
